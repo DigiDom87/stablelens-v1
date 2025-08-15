@@ -1,5 +1,5 @@
 // StableLens v1 - Free API Edition (ESM)
-// Node >= 18 required (uses global fetch)
+// Node >= 18
 
 import express from "express";
 import cors from "cors";
@@ -7,7 +7,6 @@ import path from "path";
 import { fileURLToPath } from "url";
 import RSSParser from "rss-parser";
 
-// --- __dirname shim for ESM
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -17,7 +16,7 @@ const PORT = process.env.PORT || 8080;
 app.use(cors());
 app.use(express.json());
 
-// ---------- tiny in-memory cache with stale-on-error fallback ----------
+// ---- in-memory cache + helpers ----
 const cache = new Map();
 const now = () => Date.now();
 
@@ -30,12 +29,11 @@ async function withCache(key, ttlMs, fetcher) {
     cache.set(key, { v, t: now() });
     return v;
   } catch (e) {
-    if (entry) return entry.v; // serve stale on error
+    if (entry) return entry.v; // stale-on-error
     throw e;
   }
 }
 
-// ---------- generic fetch with retry/backoff ----------
 async function fetchWithRetry(url, opts = {}, attempts = 3, backoffMs = 300) {
   let lastErr;
   for (let i = 0; i < attempts; i++) {
@@ -47,7 +45,6 @@ async function fetchWithRetry(url, opts = {}, attempts = 3, backoffMs = 300) {
           "user-agent": "StableLens/1.0 (free-api)",
           ...(opts.headers || {})
         },
-        // Tight timeouts so the UI never hangs
         signal: AbortSignal.timeout?.(12000)
       });
       if (!r.ok) throw new Error(`${url} -> ${r.status}`);
@@ -60,16 +57,22 @@ async function fetchWithRetry(url, opts = {}, attempts = 3, backoffMs = 300) {
   throw lastErr;
 }
 
-// ---------- HEALTH ----------
+// ---- security headers (safe defaults) ----
+app.use((_, res, next) => {
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
+  next();
+});
+
+// ---- API ROUTES ----
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", ts: Date.now() });
 });
 
-// ---------- PRICES (DefiLlama via coingecko ids; CoinGecko fallback) ----------
-// Symbols: USDT, USDC, DAI, sDAI
 app.get("/api/prices", async (_req, res) => {
   const CG = { USDT: "tether", USDC: "usd-coin", DAI: "dai", sDAI: "savings-dai" };
-
   async function llamaCG() {
     const ids = Object.values(CG).map(id => `coingecko:${id}`).join(",");
     const url = `https://coins.llama.fi/prices/current/${ids}`;
@@ -87,7 +90,6 @@ app.get("/api/prices", async (_req, res) => {
     }
     return data;
   }
-
   async function coingeckoFallback() {
     const ids = Object.values(CG).join(",");
     const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`;
@@ -100,7 +102,6 @@ app.get("/api/prices", async (_req, res) => {
     }
     return data;
   }
-
   try {
     const data = await withCache("prices", 60_000, async () => {
       const primary = await llamaCG();
@@ -108,19 +109,16 @@ app.get("/api/prices", async (_req, res) => {
       return allNull ? await coingeckoFallback() : primary;
     });
     res.json({ updatedAt: Date.now(), data });
-  } catch (e) {
+  } catch {
     try {
       const data = await coingeckoFallback();
       res.json({ updatedAt: Date.now(), data });
-    } catch (e2) {
+    } catch {
       res.status(502).json({ error: "Price sources unavailable" });
     }
   }
 });
 
-// ---------- STABLECOIN CIRCULATING (by chain) ----------
-// Uses stablecoins.llama.fi time series per chain (free)
-// Example: /api/stablecoins/chain?chain=Ethereum
 app.get("/api/stablecoins/chain", async (req, res) => {
   const chain = (req.query.chain || "Ethereum").toString();
   const key = `stables:${chain}`;
@@ -129,7 +127,6 @@ app.get("/api/stablecoins/chain", async (req, res) => {
       const url = `https://stablecoins.llama.fi/stablecoincharts/${encodeURIComponent(chain)}?stablecoin=1`;
       const r = await fetchWithRetry(url);
       const arr = await r.json();
-      // Normalize to {t, circulatingUSD, bridgedUSD}
       return arr.map(row => ({
         t: (row.date * 1000) || null,
         circulatingUSD: row?.totalCirculatingUSD?.peggedUSD ?? null,
@@ -137,13 +134,11 @@ app.get("/api/stablecoins/chain", async (req, res) => {
       })).filter(p => p.t && (p.circulatingUSD != null));
     });
     res.json({ chain, updatedAt: Date.now(), series });
-  } catch (e) {
+  } catch {
     res.status(502).json({ error: `Stablecoin series unavailable for ${chain}` });
   }
 });
 
-// ---------- sDAI YIELDS (top pools) ----------
-// Uses the public yields server pools list and filters for sDAI
 app.get("/api/yields/sdai", async (_req, res) => {
   try {
     const data = await withCache("yields:sdai", 10 * 60_000, async () => {
@@ -166,12 +161,11 @@ app.get("/api/yields/sdai", async (_req, res) => {
         }));
     });
     res.json({ updatedAt: Date.now(), pools: data });
-  } catch (e) {
+  } catch {
     res.status(502).json({ error: "Yield data unavailable" });
   }
 });
 
-// ---------- NEWS (Fed + BIS RSS) ----------
 const rss = new RSSParser();
 app.get("/api/news", async (_req, res) => {
   try {
@@ -193,7 +187,7 @@ app.get("/api/news", async (_req, res) => {
               published: it.isoDate || it.pubDate || null
             });
           }
-        } catch (_e) { /* skip bad feed */ }
+        } catch {}
       }
       return items
         .filter(i => !!i.title && !!i.link)
@@ -201,16 +195,15 @@ app.get("/api/news", async (_req, res) => {
         .slice(0, 20);
     });
     res.json({ updatedAt: Date.now(), items: news });
-  } catch (e) {
+  } catch {
     res.status(502).json({ error: "News unavailable" });
   }
 });
 
-// ---------- static frontend ----------
+// ---- static + catch-all ----
 app.use(express.static(path.join(__dirname, "public")));
-
-// fallback to index
-app.get("*", (_req, res) => {
+app.get("*", (req, res) => {
+  if (req.path.startsWith("/api/")) return res.status(404).json({ error: "Not found" });
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 

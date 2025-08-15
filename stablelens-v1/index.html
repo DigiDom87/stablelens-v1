@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>StableLens v1 — Free API</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+  <style>
+    :root{
+      --bg: #0b0c10; --panel:#11131a; --text:#e9eef3; --muted:#94a3b8; --accent:#38bdf8; --ok:#22c55e; --warn:#fbbf24; --err:#ef4444; --border:#1f2735;
+    }
+    :root.light{
+      --bg:#f8fafc; --panel:#ffffff; --text:#0f172a; --muted:#475569; --accent:#0ea5e9; --ok:#16a34a; --warn:#f59e0b; --err:#dc2626; --border:#e2e8f0;
+    }
+    *{ box-sizing: border-box }
+    body{ margin:0; background:var(--bg); color:var(--text); font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    header{ display:flex; align-items:center; justify-content:space-between; gap:16px; padding:20px; position:sticky; top:0; background:var(--bg); border-bottom:1px solid var(--border); z-index:10 }
+    .brand{ display:flex; align-items:center; gap:10px }
+    .badge{ font-size:12px; padding:4px 8px; border:1px solid var(--border); border-radius:999px; color:var(--muted) }
+    .toggle{ cursor:pointer; padding:8px 12px; border:1px solid var(--border); border-radius:10px; background:var(--panel); color:var(--text); }
+    main{ max-width:1100px; margin: 24px auto; padding: 0 20px; }
+    .grid{ display:grid; grid-template-columns: repeat(12, 1fr); gap:16px }
+    .card{ grid-column: span 12; background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:16px }
+    @media(min-width: 900px){ .span6{ grid-column: span 6 } .span4{ grid-column: span 4 } }
+    h2{ font-size:18px; margin: 0 0 12px }
+    .row{ display:flex; flex-wrap:wrap; gap:10px }
+    .pill{ padding:6px 10px; border:1px solid var(--border); border-radius:10px; color:var(--muted) }
+    .price{ font-weight:600 }
+    a{ color:var(--accent); text-decoration:none }
+    .muted{ color:var(--muted) }
+    .list{ display:grid; gap:10px }
+    .list a{ display:block; padding:10px; border:1px solid var(--border); border-radius:12px; background:transparent }
+    .kpi{ display:grid; grid-template-columns: repeat(4, 1fr); gap:10px }
+    .kpi .box{ border:1px solid var(--border); border-radius:12px; padding:12px; text-align:center }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <strong>StableLens</strong>
+      <span class="badge">v1 • free APIs</span>
+    </div>
+    <button id="themeToggle" class="toggle" title="Toggle light/dark">🌓 Theme</button>
+  </header>
+
+  <main>
+    <section class="grid">
+      <div class="card span6" id="pricesCard">
+        <h2>Stablecoin Prices (USD)</h2>
+        <div class="kpi" id="prices"></div>
+        <div class="muted" id="pricesUpdated"></div>
+      </div>
+
+      <div class="card span6">
+        <h2>sDAI Yields (Top Pools)</h2>
+        <div class="list" id="yields"></div>
+      </div>
+
+      <div class="card span6">
+        <h2>Stablecoin Circulating — Ethereum</h2>
+        <canvas id="ethChart" height="140"></canvas>
+      </div>
+
+      <div class="card span6">
+        <h2>Stablecoin Circulating — Tron</h2>
+        <canvas id="tronChart" height="140"></canvas>
+      </div>
+
+      <div class="card span12">
+        <h2>Policy & Data Feeds (Fed + BIS)</h2>
+        <div class="list" id="news"></div>
+      </div>
+    </section>
+    <p class="muted">Sources: DefiLlama (prices, stablecoins, yields), Federal Reserve & BIS RSS. Free endpoints only.</p>
+  </main>
+
+  <script>
+    // ---- theme ----
+    const root = document.documentElement;
+    const saved = localStorage.getItem('sl-theme');
+    function applyTheme(mode){
+      root.classList.toggle('light', mode === 'light');
+      localStorage.setItem('sl-theme', mode);
+    }
+    const prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
+    applyTheme(saved ?? (prefersLight ? 'light' : 'dark'));
+    document.getElementById('themeToggle').onclick = () => {
+      const cur = root.classList.contains('light') ? 'light' : 'dark';
+      applyTheme(cur === 'light' ? 'dark' : 'light');
+    };
+
+    // ---- helpers ----
+    const $$ = sel => document.querySelector(sel);
+    const fmtUsd = n => n == null ? '—' : '$' + n.toLocaleString(undefined, {maximumFractionDigits: 6});
+    const fmtPct = n => n == null ? '' : ` (${(n*100).toFixed(1)}% conf)`;
+    const fmtDate = ms => new Date(ms).toLocaleString();
+
+    // ---- Prices ----
+    async function loadPrices(){
+      try{
+        const r = await fetch('/api/prices');
+        const json = await r.json();
+        const d = json.data || {};
+        const el = $$('#prices');
+        el.innerHTML = '';
+        for(const k of ['USDT','USDC','DAI','sDAI']){
+          const v = d[k] || {}; const conf = v.confidence != null ? `\n<div class="muted">conf ${(v.confidence*100).toFixed(0)}%</div>` : '';
+          const box = document.createElement('div');
+          box.className = 'box';
+          box.innerHTML = `<div class="muted">${k}</div><div class="price">${fmtUsd(v.price)}</div>${conf}`;
+          el.appendChild(box);
+        }
+        $$('#pricesUpdated').textContent = 'Updated ' + fmtDate(json.updatedAt);
+      }catch(e){ $$('#pricesCard').innerHTML += '<div class="muted">Price feed unavailable.</div>'; }
+    }
+
+    // ---- sDAI Yields ----
+    async function loadYields(){
+      try{
+        const r = await fetch('/api/yields/sdai');
+        const { pools } = await r.json();
+        const list = $$('#yields');
+        list.innerHTML = '';
+        (pools||[]).forEach(p => {
+          const a = document.createElement('a');
+          a.href = p.url || '#';
+          a.target = '_blank';
+          a.rel = 'noopener';
+          a.innerHTML = `<strong>${p.project}</strong> · ${p.chain} · ${p.symbol}<br><span class="muted">APY: ${p.apy?.toFixed?.(2) ?? '—'}% · TVL: ${fmtUsd(p.tvlUsd)}</span>`;
+          list.appendChild(a);
+        });
+      }catch(e){ $$('#yields').innerHTML = '<div class="muted">Yield feed unavailable.</div>'; }
+    }
+
+    // ---- Stablecoin charts ----
+    async function loadSeries(chain, canvasId){
+      const r = await fetch('/api/stablecoins/chain?chain='+encodeURIComponent(chain));
+      const { series } = await r.json();
+      const ctx = document.getElementById(canvasId).getContext('2d');
+      const data = series.slice(-365); // last ~1y
+      return new Chart(ctx, {
+        type: 'line',
+        data: {
+          datasets: [{
+            label: 'Circulating USD',
+            data: data.map(p => ({ x: p.t, y: p.circulatingUSD })),
+            borderWidth: 2,
+            tension: .2,
+            fill: false
+          }]
+        },
+        options: {
+          responsive: true,
+          parsing: false,
+          scales: {
+            x: { type: 'time', time: { unit: 'month' } },
+            y: { ticks: { callback: (v) => '$' + Number(v).toLocaleString() } }
+          },
+          plugins: { legend: { display: false } }
+        }
+      });
+    }
+
+    // Chart.js time scale needs a date adapter — use built-in fallback by converting x to ms
+    (async function init(){
+      await loadPrices();
+      await loadYields();
+      await loadSeries('Ethereum', 'ethChart');
+      await loadSeries('Tron', 'tronChart');
+      // News last so it doesn’t block the first paint
+      try{
+        const r = await fetch('/api/news');
+        const { items } = await r.json();
+        const list = $$('#news');
+        items.forEach(n => {
+          const a = document.createElement('a');
+          a.href = n.link; a.target = '_blank'; a.rel = 'noopener';
+          const when = n.published ? new Date(n.published).toLocaleString() : '';
+          a.innerHTML = `<strong>${n.title}</strong><br><span class="muted">${n.source} • ${when}</span>`;
+          list.appendChild(a);
+        });
+      }catch(e){ $$('#news').innerHTML = '<div class="muted">News feeds unavailable.</div>'; }
+    })();
+  </script>
+</body>
+</html>

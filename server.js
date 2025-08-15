@@ -7,6 +7,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import RSSParser from "rss-parser";
 
+// __dirname shim for ESM
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -16,14 +17,13 @@ const PORT = process.env.PORT || 8080;
 app.use(cors());
 app.use(express.json());
 
-// ---- in-memory cache + helpers ----
+// -------- helpers: cache + retry --------
 const cache = new Map();
 const now = () => Date.now();
 
 async function withCache(key, ttlMs, fetcher) {
   const entry = cache.get(key);
-  const fresh = entry && (now() - entry.t) < ttlMs;
-  if (fresh) return entry.v;
+  if (entry && now() - entry.t < ttlMs) return entry.v;
   try {
     const v = await fetcher();
     cache.set(key, { v, t: now() });
@@ -57,22 +57,14 @@ async function fetchWithRetry(url, opts = {}, attempts = 3, backoffMs = 300) {
   throw lastErr;
 }
 
-// ---- security headers (safe defaults) ----
-app.use((_, res, next) => {
-  res.setHeader("X-Frame-Options", "SAMEORIGIN");
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-  res.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
-  next();
-});
-
-// ---- API ROUTES ----
+// -------- API routes --------
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", ts: Date.now() });
 });
 
 app.get("/api/prices", async (_req, res) => {
   const CG = { USDT: "tether", USDC: "usd-coin", DAI: "dai", sDAI: "savings-dai" };
+
   async function llamaCG() {
     const ids = Object.values(CG).map(id => `coingecko:${id}`).join(",");
     const url = `https://coins.llama.fi/prices/current/${ids}`;
@@ -90,6 +82,7 @@ app.get("/api/prices", async (_req, res) => {
     }
     return data;
   }
+
   async function coingeckoFallback() {
     const ids = Object.values(CG).join(",");
     const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`;
@@ -98,10 +91,11 @@ app.get("/api/prices", async (_req, res) => {
     const data = {};
     for (const [sym, id] of Object.entries(CG)) {
       const px = out?.[id]?.usd;
-      data[sym] = { price: (typeof px === "number" ? px : null), confidence: null };
+      data[sym] = { price: typeof px === "number" ? px : null, confidence: null };
     }
     return data;
   }
+
   try {
     const data = await withCache("prices", 60_000, async () => {
       const primary = await llamaCG();
@@ -121,17 +115,16 @@ app.get("/api/prices", async (_req, res) => {
 
 app.get("/api/stablecoins/chain", async (req, res) => {
   const chain = (req.query.chain || "Ethereum").toString();
-  const key = `stables:${chain}`;
   try {
-    const series = await withCache(key, 30 * 60_000, async () => {
+    const series = await withCache(`stables:${chain}`, 30 * 60_000, async () => {
       const url = `https://stablecoins.llama.fi/stablecoincharts/${encodeURIComponent(chain)}?stablecoin=1`;
       const r = await fetchWithRetry(url);
       const arr = await r.json();
       return arr.map(row => ({
-        t: (row.date * 1000) || null,
+        t: row.date * 1000 || null,
         circulatingUSD: row?.totalCirculatingUSD?.peggedUSD ?? null,
         bridgedUSD: row?.totalBridgedToUSD?.peggedUSD ?? null
-      })).filter(p => p.t && (p.circulatingUSD != null));
+      })).filter(p => p.t && p.circulatingUSD != null);
     });
     res.json({ chain, updatedAt: Date.now(), series });
   } catch {
@@ -190,7 +183,7 @@ app.get("/api/news", async (_req, res) => {
         } catch {}
       }
       return items
-        .filter(i => !!i.title && !!i.link)
+        .filter(i => i.title && i.link)
         .sort((a, b) => new Date(b.published || 0) - new Date(a.published || 0))
         .slice(0, 20);
     });
@@ -200,7 +193,7 @@ app.get("/api/news", async (_req, res) => {
   }
 });
 
-// ---- static + catch-all ----
+// -------- static frontend + catch-all --------
 app.use(express.static(path.join(__dirname, "public")));
 app.get("*", (req, res) => {
   if (req.path.startsWith("/api/")) return res.status(404).json({ error: "Not found" });
@@ -210,3 +203,4 @@ app.get("*", (req, res) => {
 app.listen(PORT, () => {
   console.log(`StableLens v1 listening on :${PORT}`);
 });
+

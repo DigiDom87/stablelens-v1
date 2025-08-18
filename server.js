@@ -1,5 +1,5 @@
-// StableLens v1 (clean, no DB, free feeds)
-// Node >= 18, ESM
+// StableLens v1.1 — richer endpoints, detail views, basic charts data
+// Free APIs only. Node >= 18 (ESM)
 
 import express from "express";
 import cors from "cors";
@@ -9,25 +9,31 @@ import RSSParser from "rss-parser";
 import { fileURLToPath } from "url";
 import path from "path";
 
+// --------------------------------------------------------
+// Bootstrapping
+// --------------------------------------------------------
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-app.use(cors());
+const allow = process.env.CORS_ORIGIN?.split(",").map(s => s.trim());
+app.use(cors(allow ? { origin: allow } : {}));
 app.use(express.json());
 app.use(compression());
 app.use(
   helmet({
-    contentSecurityPolicy: false, // allow inline script/styles in our simple UI
+    contentSecurityPolicy: false,         // allow CDN Chart.js + inline in our simple UI
     crossOriginResourcePolicy: false
   })
 );
 
-// -----------------------------
-// Basic in-memory cache
-// -----------------------------
+const parser = new RSSParser();
+
+// --------------------------------------------------------
+// In-memory cache
+// --------------------------------------------------------
 const cache = {
   stablecoins: { data: null, t: 0 },
   yields: { data: null, t: 0 },
@@ -35,6 +41,7 @@ const cache = {
   news: { data: null, t: 0 },
   alerts: { data: null, t: 0 }
 };
+
 const TTL = {
   stablecoins: 5 * 60 * 1000,
   yields: 5 * 60 * 1000,
@@ -43,13 +50,9 @@ const TTL = {
   alerts: 60 * 1000
 };
 
-const parser = new RSSParser();
-
-// -----------------------------
-// Seed data (safe defaults)
-// -----------------------------
-
-// v1 stablecoins list (can extend later; no paid feeds)
+// --------------------------------------------------------
+// Seed registries (expand anytime)
+// --------------------------------------------------------
 const SEEDED_STABLES = [
   {
     symbol: "USDC",
@@ -134,7 +137,6 @@ const SEEDED_STABLES = [
   }
 ];
 
-// CeFi/DeFi platforms, seeded compliance-ish metadata
 const SEEDED_PLATFORMS = {
   cefi: [
     {
@@ -143,7 +145,7 @@ const SEEDED_PLATFORMS = {
       licenses: ["NY BitLicense", "MSB"],
       auditor: "Deloitte (financials)",
       por: "Yes (independent attestations)",
-      insured: false, // no FDIC/FSCS for crypto balances
+      insured: false,
       riskNotes: "High regulatory transparency in US",
       scoreBase: 8.8
     },
@@ -247,42 +249,67 @@ const SEEDED_PLATFORMS = {
   ]
 };
 
-// -----------------------------
-// Helpers
-// -----------------------------
-
+// --------------------------------------------------------
+// Scoring & helpers
+// --------------------------------------------------------
 function scoreStablecoin(sc, depegIncidents = 0) {
-  // Heuristic 1-10; robust to text variations (no fragile quotes)
+  // same heuristic as before, but robust to text variations
   let s = 5;
   const juris = (sc.jurisdiction || "");
   const auditor = (sc.auditor || "").toLowerCase();
   const genius = (sc.genius || "").toLowerCase();
 
-  // Jurisdiction boost: NYDFS or US (MSB) — regex avoids special-char pitfalls
   if (/(NYDFS|US\s*\(MSB)/i.test(juris)) s += 2;
-
-  // Auditor signals
   if (auditor.includes("grant thornton")) s += 1;
   if (auditor.includes("withum")) s += 0.8;
   if (auditor.includes("bdo")) s += 0.3;
-
-  // Model effects
-  if ((sc.model || "") === "crypto-collateralized") s -= 0.8; // slightly riskier for regulators
-  if (genius === "yes" || genius === "likely") s += 1.5;
-
-  // Offshore/decentralized penalty
+  if ((sc.model || "") === "crypto-collateralized") s -= 0.8;
   if (/OFFSHORE|DECENTRALIZED/i.test(juris)) s -= 0.7;
-
-  // Depeg incidents penalty
+  if (genius === "yes" || genius === "likely") s += 1.5;
   s -= Math.min(2, depegIncidents * 0.7);
 
-  // Clamp & round
   return Math.max(1, Math.min(10, Math.round(s * 10) / 10));
+}
+
+function scoreBreakdown(sc, depegIncidents = 0) {
+  // break the final score into components for UI chart
+  const parts = {
+    base: 5,
+    jurisdiction: /(NYDFS|US\s*\(MSB)/i.test(sc.jurisdiction || "") ? 2 : 0,
+    auditor:
+      (sc.auditor || "").toLowerCase().includes("grant thornton")
+        ? 1
+        : (sc.auditor || "").toLowerCase().includes("withum")
+        ? 0.8
+        : (sc.auditor || "").toLowerCase().includes("bdo")
+        ? 0.3
+        : 0,
+    model: (sc.model || "") === "crypto-collateralized" ? -0.8 : 0,
+    offshore: /OFFSHORE|DECENTRALIZED/i.test(sc.jurisdiction || "") ? -0.7 : 0,
+    genius:
+      (sc.genius || "").toLowerCase() === "yes" || (sc.genius || "").toLowerCase() === "likely"
+        ? 1.5
+        : 0,
+    depeg: -Math.min(2, depegIncidents * 0.7)
+  };
+  const total =
+    parts.base +
+    parts.jurisdiction +
+    parts.auditor +
+    parts.model +
+    parts.offshore +
+    parts.genius +
+    parts.depeg;
+
+  return {
+    parts,
+    total: Math.max(1, Math.min(10, Math.round(total * 10) / 10))
+  };
 }
 
 function scorePlatform(p) {
   let s = p.scoreBase || 6.5;
-  if ((p.licenses || []).some((x) => /NYDFS|TRUST|MSB|VASP/i.test(x))) s += 0.6;
+  if ((p.licenses || []).some(x => /NYDFS|TRUST|MSB|VASP/i.test(x))) s += 0.6;
   if ((p.auditor || "").toLowerCase().includes("deloitte")) s += 0.3;
   if ((p.por || "").toLowerCase().includes("partial")) s -= 0.3;
   if ((p.riskNotes || "").toLowerCase().includes("regulatory action")) s -= 0.8;
@@ -291,28 +318,45 @@ function scorePlatform(p) {
 
 async function safeJSON(url, timeoutMs = 12000) {
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const res = await fetch(url, { signal: ctrl.signal });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
-  } catch (e) {
+  } catch {
     return null;
   } finally {
-    clearTimeout(t);
+    clearTimeout(timer);
   }
 }
 
-async function fetchYields() {
-  // DeFiLlama free yields catalog
+async function fetchYieldsFromLlama() {
   const url = "https://yields.llama.fi/pools";
   const json = await safeJSON(url);
   if (!json || !Array.isArray(json.data)) return [];
   return json.data;
 }
 
+function buildStablecoinList() {
+  return SEEDED_STABLES.map(sc => {
+    const incidents = 0;
+    return {
+      ...sc,
+      score: scoreStablecoin(sc, incidents),
+      price: null,
+      supply: null
+    };
+  });
+}
+
+function buildPlatforms() {
+  return {
+    cefi: SEEDED_PLATFORMS.cefi.map(p => ({ ...p, score: scorePlatform(p) })),
+    defi: SEEDED_PLATFORMS.defi.map(p => ({ ...p, score: scorePlatform(p) }))
+  };
+}
+
 async function fetchNewsFeeds() {
-  // If any feed fails, we continue with the others
   const feeds = [
     { name: "SEC", url: "https://www.sec.gov/news/pressreleases.rss" },
     { name: "CFTC", url: "https://www.cftc.gov/PressRoom/PressReleases/rss.xml" },
@@ -324,10 +368,10 @@ async function fetchNewsFeeds() {
 
   const items = [];
   await Promise.all(
-    feeds.map(async (f) => {
+    feeds.map(async f => {
       try {
         const feed = await parser.parseURL(f.url);
-        (feed.items || []).slice(0, 10).forEach((it) => {
+        (feed.items || []).slice(0, 10).forEach(it => {
           items.push({
             source: f.name,
             title: it.title || "",
@@ -336,43 +380,19 @@ async function fetchNewsFeeds() {
             isoDate: it.isoDate || it.pubDate || ""
           });
         });
-      } catch (e) {
-        // ignore a failing source
+      } catch {
+        // ignore source failures
       }
     })
   );
 
-  // sort newest first
   items.sort((a, b) => new Date(b.isoDate || 0) - new Date(a.isoDate || 0));
   return items.slice(0, 40);
 }
 
-function buildStablecoinPayload() {
-  // We could overlay price or supply from free sources later; for now keep robust
-  const out = SEEDED_STABLES.map((sc) => {
-    const incidents = 0; // placeholder; you can stitch depeg history later
-    return {
-      ...sc,
-      score: scoreStablecoin(sc, incidents),
-      price: null,
-      supply: null
-    };
-  });
-  return out;
-}
-
-function buildPlatformPayload() {
-  return {
-    cefi: SEEDED_PLATFORMS.cefi.map((p) => ({ ...p, score: scorePlatform(p) })),
-    defi: SEEDED_PLATFORMS.defi.map((p) => ({ ...p, score: scorePlatform(p) }))
-  };
-}
-
 function buildAlerts({ stablecoins = [], news = [] }) {
   const alerts = [];
-
-  // Depeg alerts (if we eventually set price)
-  stablecoins.forEach((s) => {
+  stablecoins.forEach(s => {
     if (typeof s.price === "number") {
       const diff = Math.abs(1 - s.price);
       if (diff >= 0.015) {
@@ -385,9 +405,7 @@ function buildAlerts({ stablecoins = [], news = [] }) {
       }
     }
   });
-
-  // Enforcement style news alerts
-  news.forEach((n) => {
+  news.forEach(n => {
     const t = (n.title || "").toLowerCase();
     if (
       /enforcement|settlement|charge|lawsuit|penalty|consent order/.test(t) &&
@@ -402,14 +420,12 @@ function buildAlerts({ stablecoins = [], news = [] }) {
       });
     }
   });
-
   return alerts.slice(0, 50);
 }
 
-// -----------------------------
-// API Routes
-// -----------------------------
-
+// --------------------------------------------------------
+// API
+// --------------------------------------------------------
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", ts: Date.now() });
 });
@@ -427,31 +443,109 @@ app.get("/api/status", (_req, res) => {
   });
 });
 
+// List
 app.get("/api/stablecoins", async (_req, res) => {
   try {
     if (!cache.stablecoins.data || Date.now() - cache.stablecoins.t > TTL.stablecoins) {
-      const data = buildStablecoinPayload();
-      cache.stablecoins = { data, t: Date.now() };
+      cache.stablecoins = { data: buildStablecoinList(), t: Date.now() };
     }
     res.json({ stablecoins: cache.stablecoins.data });
-  } catch (e) {
-    res.json({ stablecoins: buildStablecoinPayload() });
+  } catch {
+    res.json({ stablecoins: buildStablecoinList() });
   }
 });
 
-app.get("/api/yields", async (req, res) => {
+// Detail (by symbol)
+app.get("/api/stablecoins/:symbol", async (req, res) => {
+  const sym = (req.params.symbol || "").toUpperCase();
   try {
+    if (!cache.stablecoins.data) cache.stablecoins = { data: buildStablecoinList(), t: Date.now() };
+    const found = cache.stablecoins.data.find(s => (s.symbol || "").toUpperCase() === sym);
+    if (!found) return res.status(404).json({ error: "not_found" });
+
+    // compute breakdown
+    const incidents = 0;
+    const breakdown = scoreBreakdown(found, incidents);
+
+    // top pools for the symbol
     if (!cache.yields.data || Date.now() - cache.yields.t > TTL.yields) {
-      const data = await fetchYields();
+      const data = await fetchYieldsFromLlama();
       cache.yields = { data, t: Date.now() };
     }
-    const symbol = (req.query.symbol || "").toUpperCase();
-    let out = cache.yields.data || [];
-    if (symbol) {
-      out = out.filter((p) => (p.symbol || "").toUpperCase() === symbol);
+    const pools = (cache.yields.data || [])
+      .filter(p => (p.symbol || "").toUpperCase() === sym)
+      .sort((a, b) => (b.apy || 0) - (a.apy || 0))
+      .slice(0, 12)
+      .map(p => ({
+        project: p.project,
+        chain: p.chain,
+        symbol: p.symbol,
+        apy: p.apy,
+        apyBase: p.apyBase,
+        apyReward: p.apyReward,
+        tvlUsd: p.tvlUsd,
+        pool: p.pool
+      }));
+
+    res.json({ stablecoin: found, breakdown, topPools: pools });
+  } catch (e) {
+    res.status(500).json({ error: "server_error" });
+  }
+});
+
+// Platforms (list)
+app.get("/api/platforms", async (_req, res) => {
+  try {
+    if (!cache.platforms.data || Date.now() - cache.platforms.t > TTL.platforms) {
+      cache.platforms = { data: buildPlatforms(), t: Date.now() };
     }
-    // return lightweight fields
-    out = out.slice(0, 50).map((p) => ({
+    res.json(cache.platforms.data);
+  } catch {
+    res.json(buildPlatforms());
+  }
+});
+
+// Platform detail (by name slug)
+app.get("/api/platforms/:name", async (req, res) => {
+  const name = decodeURIComponent(req.params.name || "");
+  try {
+    if (!cache.platforms.data) cache.platforms = { data: buildPlatforms(), t: Date.now() };
+    const all = cache.platforms.data;
+    const item =
+      (all.cefi || []).find(p => p.name.toLowerCase() === name.toLowerCase()) ||
+      (all.defi || []).find(p => p.name.toLowerCase() === name.toLowerCase());
+    if (!item) return res.status(404).json({ error: "not_found" });
+    res.json({ platform: item });
+  } catch {
+    res.status(500).json({ error: "server_error" });
+  }
+});
+
+// Yields with filters/sorting
+// /api/yields?symbol=&chain=&sort=apy|tvl&order=desc|asc&minScore=7
+app.get("/api/yields", async (req, res) => {
+  const symbol = (req.query.symbol || "").toUpperCase();
+  const chain = req.query.chain || "";
+  const sort = (req.query.sort || "apy").toLowerCase(); // apy|tvl
+  const order = (req.query.order || "desc").toLowerCase(); // desc|asc
+  const minScore = parseFloat(req.query.minScore || "0");
+
+  try {
+    if (!cache.yields.data || Date.now() - cache.yields.t > TTL.yields) {
+      const data = await fetchYieldsFromLlama();
+      cache.yields = { data, t: Date.now() };
+    }
+    if (!cache.stablecoins.data) cache.stablecoins = { data: buildStablecoinList(), t: Date.now() };
+
+    // quick score map
+    const scoreMap = new Map(cache.stablecoins.data.map(s => [s.symbol.toUpperCase(), s.score || 0]));
+
+    let rows = cache.yields.data || [];
+    if (symbol) rows = rows.filter(p => (p.symbol || "").toUpperCase() === symbol);
+    if (chain) rows = rows.filter(p => (p.chain || "").toLowerCase() === chain.toLowerCase());
+    if (minScore > 0) rows = rows.filter(p => (scoreMap.get((p.symbol || "").toUpperCase()) || 0) >= minScore);
+
+    rows = rows.map(p => ({
       project: p.project,
       chain: p.chain,
       symbol: p.symbol,
@@ -461,24 +555,59 @@ app.get("/api/yields", async (req, res) => {
       tvlUsd: p.tvlUsd,
       pool: p.pool
     }));
-    res.json({ pools: out });
-  } catch (e) {
+
+    rows.sort((a, b) => {
+      const key = sort === "tvl" ? "tvlUsd" : "apy";
+      const av = a[key] || 0, bv = b[key] || 0;
+      return order === "asc" ? av - bv : bv - av;
+    });
+
+    res.json({ pools: rows.slice(0, 200) });
+  } catch {
     res.json({ pools: [] });
   }
 });
 
-app.get("/api/platforms", async (_req, res) => {
+// Best finder
+// /api/best?minScore=7&chain=Ethereum&top=10
+app.get("/api/best", async (req, res) => {
+  const minScore = parseFloat(req.query.minScore || "0");
+  const chain = req.query.chain || "";
+  const top = Math.min(200, parseInt(req.query.top || "20", 10));
+
   try {
-    if (!cache.platforms.data || Date.now() - cache.platforms.t > TTL.platforms) {
-      const data = buildPlatformPayload();
-      cache.platforms = { data, t: Date.now() };
+    if (!cache.yields.data || Date.now() - cache.yields.t > TTL.yields) {
+      const data = await fetchYieldsFromLlama();
+      cache.yields = { data, t: Date.now() };
     }
-    res.json(cache.platforms.data);
-  } catch (e) {
-    res.json(buildPlatformPayload());
+    if (!cache.stablecoins.data) cache.stablecoins = { data: buildStablecoinList(), t: Date.now() };
+
+    const scoreMap = new Map(cache.stablecoins.data.map(s => [s.symbol.toUpperCase(), s.score || 0]));
+    let rows = cache.yields.data || [];
+    if (chain) rows = rows.filter(p => (p.chain || "").toLowerCase() === chain.toLowerCase());
+    if (minScore > 0) rows = rows.filter(p => (scoreMap.get((p.symbol || "").toUpperCase()) || 0) >= minScore);
+
+    rows = rows
+      .filter(p => p.symbol && typeof p.apy === "number")
+      .sort((a, b) => (b.apy || 0) - (a.apy || 0))
+      .slice(0, top)
+      .map(p => ({
+        project: p.project,
+        chain: p.chain,
+        symbol: p.symbol,
+        apy: p.apy,
+        tvlUsd: p.tvlUsd,
+        pool: p.pool,
+        complianceScore: scoreMap.get((p.symbol || "").toUpperCase()) || 0
+      }));
+
+    res.json({ results: rows });
+  } catch {
+    res.json({ results: [] });
   }
 });
 
+// News + Alerts
 app.get("/api/news", async (_req, res) => {
   try {
     if (!cache.news.data || Date.now() - cache.news.t > TTL.news) {
@@ -493,8 +622,7 @@ app.get("/api/news", async (_req, res) => {
 
 app.get("/api/alerts", async (_req, res) => {
   try {
-    // ensure upstream caches are warm enough
-    if (!cache.stablecoins.data) cache.stablecoins = { data: buildStablecoinPayload(), t: Date.now() };
+    if (!cache.stablecoins.data) cache.stablecoins = { data: buildStablecoinList(), t: Date.now() };
     if (!cache.news.data || Date.now() - cache.news.t > TTL.news) {
       const n = await fetchNewsFeeds();
       cache.news = { data: n, t: Date.now() };
@@ -502,20 +630,34 @@ app.get("/api/alerts", async (_req, res) => {
     const data = buildAlerts({ stablecoins: cache.stablecoins.data, news: cache.news.data });
     cache.alerts = { data, t: Date.now() };
     res.json({ alerts: data });
-  } catch (e) {
+  } catch {
     res.json({ alerts: [] });
   }
 });
 
-// -----------------------------
+// --------------------------------------------------------
 // Static UI
-// -----------------------------
+// --------------------------------------------------------
 app.use(express.static(path.join(__dirname, "public")));
 app.get("*", (_req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-// -----------------------------
+// --------------------------------------------------------
+// Prewarm & Listen
+// --------------------------------------------------------
+(async function prewarm() {
+  try {
+    cache.stablecoins = { data: buildStablecoinList(), t: Date.now() };
+    cache.platforms = { data: buildPlatforms(), t: Date.now() };
+    const [y, n] = await Promise.all([fetchYieldsFromLlama(), fetchNewsFeeds()]);
+    cache.yields = { data: y, t: Date.now() };
+    cache.news = { data: n, t: Date.now() };
+  } catch {
+    // ignore warm-up failures
+  }
+})();
+
 app.listen(PORT, () => {
   console.log(`StableLens v1 listening on :${PORT}`);
 });

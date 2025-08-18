@@ -1,187 +1,293 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>StableLens v1 — Free API</title>
-  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>StableLens</title>
+  <meta name="description" content="StableLens — CeFi & DeFi platforms with compliance score, stablecoin metrics, APYs, and regulatory news." />
   <style>
-    :root{
-      --bg: #0b0c10; --panel:#11131a; --text:#e9eef3; --muted:#94a3b8; --accent:#38bdf8; --ok:#22c55e; --warn:#fbbf24; --err:#ef4444; --border:#1f2735;
+    :root { --bg:#f7f8fb; --text:#101217; --card:#fff; --muted:#667085; --border:#e5e7eb; --accent:#2563eb; }
+    html[data-theme="dark"] { --bg:#0b0e13; --text:#e5e7eb; --card:#131823; --muted:#9aa3b2; --border:#202838; --accent:#60a5fa; }
+    *{box-sizing:border-box} body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Helvetica Neue,Arial;background:var(--bg);color:var(--text)}
+    header{position:sticky;top:0;z-index:5;backdrop-filter:blur(6px);background:color-mix(in oklab,var(--bg) 80%,transparent);border-bottom:1px solid var(--border)}
+    .wrap{max-width:1160px;margin:0 auto;padding:18px 16px}
+    .rowbar{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .brand{display:flex;align-items:center;gap:8px;font-weight:700}
+    .pill{font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:999px;color:var(--muted)}
+    #theme-toggle{border:1px solid var(--border);background:var(--card);color:var(--text);padding:8px 12px;border-radius:10px;cursor:pointer}
+    main.wrap{display:grid;gap:16px;grid-template-columns:repeat(12,1fr)}
+    .card{grid-column:span 6;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;min-height:140px;box-shadow:0 1px 0 rgba(0,0,0,.02)}
+    .card.wide{grid-column:span 12}
+    .card-title{font-weight:700;margin-bottom:8px}
+    .muted{color:var(--muted);font-size:14px}
+    .prices .row,.apy .row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed var(--border)}
+    .prices .row:last-child,.apy .row:last-child{border-bottom:0}
+    .yield,.news,.plat{margin:8px 0;line-height:1.35}
+    .chart-wrap{height:280px}
+    a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+    footer{color:var(--muted);padding:20px 16px 60px;text-align:center}
+    .filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+    .pillbtn{border:1px solid var(--border);background:var(--card);padding:6px 10px;border-radius:999px;cursor:pointer}
+    .pillbtn.active{border-color:var(--accent)}
+    .plat-head{display:grid;grid-template-columns:180px 70px 110px 1fr;gap:10px;margin:8px 0;color:var(--muted);font-size:13px}
+    .plat-row{display:grid;grid-template-columns:180px 70px 110px 1fr;gap:10px;padding:8px 0;border-bottom:1px dashed var(--border)}
+    .plat-row:last-child{border-bottom:0}
+    @media (max-width:900px){
+      .card{grid-column:span 12}
+      .plat-head,.plat-row{grid-template-columns:1fr 80px}
+      .plat-row div:nth-child(n+3){display:none}
     }
-    :root.light{
-      --bg:#f8fafc; --panel:#ffffff; --text:#0f172a; --muted:#475569; --accent:#0ea5e9; --ok:#16a34a; --warn:#f59e0b; --err:#dc2626; --border:#e2e8f0;
-    }
-    *{ box-sizing: border-box }
-    body{ margin:0; background:var(--bg); color:var(--text); font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
-    header{ display:flex; align-items:center; justify-content:space-between; gap:16px; padding:20px; position:sticky; top:0; background:var(--bg); border-bottom:1px solid var(--border); z-index:10 }
-    .brand{ display:flex; align-items:center; gap:10px }
-    .badge{ font-size:12px; padding:4px 8px; border:1px solid var(--border); border-radius:999px; color:var(--muted) }
-    .toggle{ cursor:pointer; padding:8px 12px; border:1px solid var(--border); border-radius:10px; background:var(--panel); color:var(--text); }
-    main{ max-width:1100px; margin: 24px auto; padding: 0 20px; }
-    .grid{ display:grid; grid-template-columns: repeat(12, 1fr); gap:16px }
-    .card{ grid-column: span 12; background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:16px }
-    @media(min-width: 900px){ .span6{ grid-column: span 6 } .span4{ grid-column: span 4 } }
-    h2{ font-size:18px; margin: 0 0 12px }
-    .row{ display:flex; flex-wrap:wrap; gap:10px }
-    .pill{ padding:6px 10px; border:1px solid var(--border); border-radius:10px; color:var(--muted) }
-    .price{ font-weight:600 }
-    a{ color:var(--accent); text-decoration:none }
-    .muted{ color:var(--muted) }
-    .list{ display:grid; gap:10px }
-    .list a{ display:block; padding:10px; border:1px solid var(--border); border-radius:12px; background:transparent }
-    .kpi{ display:grid; grid-template-columns: repeat(4, 1fr); gap:10px }
-    .kpi .box{ border:1px solid var(--border); border-radius:12px; padding:12px; text-align:center }
   </style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
 </head>
 <body>
   <header>
-    <div class="brand">
-      <strong>StableLens</strong>
-      <span class="badge">v1 • free APIs</span>
+    <div class="wrap rowbar">
+      <div class="brand"><div style="width:10px;height:10px;border-radius:50%;background:var(--accent)"></div>StableLens <span class="pill">v1</span></div>
+      <button id="theme-toggle">Theme</button>
     </div>
-    <button id="themeToggle" class="toggle" title="Toggle light/dark">🌓 Theme</button>
   </header>
 
-  <main>
-    <section class="grid">
-      <div class="card span6" id="pricesCard">
-        <h2>Stablecoin Prices (USD)</h2>
-        <div class="kpi" id="prices"></div>
-        <div class="muted" id="pricesUpdated"></div>
-      </div>
-
-      <div class="card span6">
-        <h2>sDAI Yields (Top Pools)</h2>
-        <div class="list" id="yields"></div>
-      </div>
-
-      <div class="card span6">
-        <h2>Stablecoin Circulating — Ethereum</h2>
-        <canvas id="ethChart" height="140"></canvas>
-      </div>
-
-      <div class="card span6">
-        <h2>Stablecoin Circulating — Tron</h2>
-        <canvas id="tronChart" height="140"></canvas>
-      </div>
-
-      <div class="card span12">
-        <h2>Policy & Data Feeds (Fed + BIS)</h2>
-        <div class="list" id="news"></div>
-      </div>
+  <main class="wrap">
+    <!-- Prices -->
+    <section class="card">
+      <div class="card-title">Prices (USD)</div>
+      <div id="prices-status" class="muted"></div>
+      <div id="prices" class="prices"></div>
     </section>
-    <p class="muted">Sources: DefiLlama (prices, stablecoins, yields), Federal Reserve & BIS RSS. Free endpoints only.</p>
+
+    <!-- APY Summary -->
+    <section class="card">
+      <div class="card-title">Top Stablecoin APYs</div>
+      <div id="apy-status" class="muted"></div>
+      <div id="apySummary" class="apy"></div>
+    </section>
+
+    <!-- sDAI top pools -->
+    <section class="card">
+      <div class="card-title">sDAI Yields — Top Pools</div>
+      <div id="yields-status" class="muted"></div>
+      <ul id="yields"></ul>
+    </section>
+
+    <!-- Ethereum chart -->
+    <section class="card">
+      <div class="card-title">Stablecoin Circulating — Ethereum</div>
+      <div id="eth-status" class="muted"></div>
+      <div class="chart-wrap"><canvas id="ethCanvas"></canvas></div>
+    </section>
+
+    <!-- Tron chart -->
+    <section class="card">
+      <div class="card-title">Stablecoin Circulating — Tron</div>
+      <div id="tron-status" class="muted"></div>
+      <div class="chart-wrap"><canvas id="tronCanvas"></canvas></div>
+    </section>
+
+    <!-- XRPL chart -->
+    <section class="card">
+      <div class="card-title">Stablecoin Circulating — XRPL</div>
+      <div id="xrpl-status" class="muted"></div>
+      <div class="chart-wrap"><canvas id="xrplCanvas"></canvas></div>
+    </section>
+
+    <!-- Platforms -->
+    <section class="card wide">
+      <div class="card-title">Platforms — CeFi & DeFi (Compliance Score)</div>
+      <div class="filters">
+        <button class="pillbtn active" data-type="All">All</button>
+        <button class="pillbtn" data-type="CeFi">CeFi</button>
+        <button class="pillbtn" data-type="DeFi">DeFi</button>
+        <label class="muted">Min score:
+          <input id="minScore" type="range" min="1" max="10" step="0.5" value="0" style="vertical-align:middle">
+          <span id="minScoreVal" class="muted">0</span>
+        </label>
+        <input id="pSearch" type="search" placeholder="Search platform…" style="padding:6px 10px;border:1px solid var(--border);border-radius:10px;background:var(--card);color:var(--text)">
+      </div>
+      <div id="plat-status" class="muted"></div>
+      <div class="plat-head"><div>Name</div><div>Type</div><div>Score</div><div>Notes</div></div>
+      <div id="plats"></div>
+    </section>
+
+    <!-- Regulatory -->
+    <section class="card wide">
+      <div class="card-title">Regulatory & Enforcement (SEC + CFTC)</div>
+      <div id="reg-status" class="muted"></div>
+      <ul id="reg-news"></ul>
+    </section>
+
+    <!-- Ripple / XRPL -->
+    <section class="card wide">
+      <div class="card-title">Ripple & XRPL Updates</div>
+      <div id="xrpnews-status" class="muted"></div>
+      <ul id="xrp-news"></ul>
+    </section>
+
+    <!-- Fed + BIS -->
+    <section class="card wide">
+      <div class="card-title">Policy & Data Feeds (Fed + BIS)</div>
+      <div id="news-status" class="muted"></div>
+      <ul id="news"></ul>
+    </section>
   </main>
 
+  <footer>Heuristic compliance scoring (for UX only). Sources: CoinGecko & DefiLlama (prices, stablecoins, yields), SEC/CFTC, Ripple & XRPL RSS.</footer>
+
   <script>
-    // ---- theme ----
-    const root = document.documentElement;
-    const saved = localStorage.getItem('sl-theme');
-    function applyTheme(mode){
-      root.classList.toggle('light', mode === 'light');
-      localStorage.setItem('sl-theme', mode);
+  const $ = s => document.querySelector(s);
+  const fmtUSD = n => (n == null ? "—" : n.toLocaleString(undefined,{style:"currency",currency:"USD",maximumFractionDigits:5}));
+  const setText = (s,t) => { const el=$(s); if(el) el.textContent=t; };
+
+  // Loading state
+  ["#prices-status","#apy-status","#yields-status","#eth-status","#tron-status","#xrpl-status","#reg-status","#xrpnews-status","#news-status","#plat-status"]
+    .forEach(s=>setText(s,"Loading..."));
+
+  // Theme
+  (()=>{ const b=$("#theme-toggle"); const saved=localStorage.getItem("sl-theme");
+    if(saved) document.documentElement.dataset.theme=saved;
+    b?.addEventListener("click",()=>{ const next=(document.documentElement.dataset.theme==="dark")?"light":"dark";
+      document.documentElement.dataset.theme=next; localStorage.setItem("sl-theme",next);});
+  })();
+
+  // GET helper
+  const GET = async (path) => {
+    const ctrl = new AbortController(), t = setTimeout(()=>ctrl.abort(), 12000);
+    try { const r = await fetch(path,{signal:ctrl.signal}); if(!r.ok) throw new Error(path+" -> "+r.status); return await r.json(); }
+    finally { clearTimeout(t); }
+  };
+
+  // Prices (USDT/USDC/DAI/sDAI + XRP + RLUSD)
+  (async()=>{try{
+    const out=await GET("/api/prices"); const d=out.data||{};
+    const rows=[["USDT",d.USDT?.price],["USDC",d.USDC?.price],["DAI",d.DAI?.price],["sDAI",d.sDAI?.price],["XRP",d.XRP?.price],["RLUSD",d.RLUSD?.price]]
+      .map(([k,v])=>`<div class="row"><span>${k}</span><span>${fmtUSD(v)}</span></div>`).join("");
+    $("#prices").innerHTML=rows; setText("#prices-status","");
+  }catch{ setText("#prices-status","Price feed unavailable."); }})();
+
+  // APY summary
+  (async()=>{try{
+    const out=await GET("/api/yields/summary?symbols=USDT,USDC,DAI,sDAI,RLUSD");
+    const html=(out.summary||[]).map(x=>{
+      const apy = (x.bestApy==null) ? "—" : (x.bestApy.toFixed ? x.bestApy.toFixed(2)+"%" : x.bestApy+"%");
+      const meta = (x.bestProject?` · ${x.bestProject}${x.bestChain?(" — "+x.bestChain):""}`:"");
+      return `<div class="row"><span>${x.symbol}</span><span>${apy}${meta}</span></div>`;
+    }).join("");
+    $("#apySummary").innerHTML = html || "<div class='muted'>No APY data.</div>";
+    setText("#apy-status","");
+  }catch{ setText("#apy-status","APY feeds unavailable."); }})();
+
+  // sDAI detailed pools
+  (async()=>{try{
+    const out=await GET("/api/yields?symbol=sDAI");
+    const html=(out.pools||[]).map(p=>`
+      <li class="yield">
+        <div><strong>${p.project}</strong> · ${p.chain} · ${p.symbol}</div>
+        <div>APY: ${p.apy==null?"—":(p.apy.toFixed?p.apy.toFixed(2)+"%":p.apy+"%")}
+            · TVL: ${p.tvlUsd?("$"+Math.round(p.tvlUsd).toLocaleString()):"—"}
+            ${p.url?` · <a href="${p.url}" target="_blank" rel="noopener">link</a>`:""}
+        </div>
+      </li>`).join("");
+    $("#yields").innerHTML = html || "<li>No pools found.</li>";
+    setText("#yields-status","");
+  }catch{ setText("#yields-status","Yield feed unavailable."); }})();
+
+  // Charts helper
+  const makeLine=(ctx,label,series)=>new Chart(ctx,{type:"line",data:{
+      labels:series.map(p=>new Date(p.t)),
+      datasets:[{label,data:series.map(p=>p.circulatingUSD),fill:false,tension:.2,pointRadius:0}]
+    },
+    options:{responsive:true,maintainAspectRatio:false,
+      scales:{x:{type:"time",time:{unit:"month"}},y:{ticks:{callback:v=>"$"+(v/1e9).toFixed(1)+"B"}}},
+      plugins:{legend:{display:false}}}
+  });
+
+  // Ethereum
+  (async()=>{try{
+    const eth=await GET("/api/stablecoins/chain?chain=Ethereum");
+    const s=(eth.series||[]).slice(-365); if(s.length){ makeLine($("#ethCanvas").getContext("2d"),"Circulating — Ethereum",s); setText("#eth-status",""); }
+    else setText("#eth-status","No data.");
+  }catch{ setText("#eth-status","Unavailable."); }})();
+
+  // Tron
+  (async()=>{try{
+    const tr=await GET("/api/stablecoins/chain?chain=Tron");
+    const s=(tr.series||[]).slice(-365); if(s.length){ makeLine($("#tronCanvas").getContext("2d"),"Circulating — Tron",s); setText("#tron-status",""); }
+    else setText("#tron-status","No data.");
+  }catch{ setText("#tron-status","Unavailable."); }})();
+
+  // XRPL
+  (async()=>{try{
+    const xr=await GET("/api/stablecoins/chain?chain=XRPL");
+    const s=(xr.series||[]).slice(-365); if(s.length){ makeLine($("#xrplCanvas").getContext("2d"),"Circulating — XRPL",s); setText("#xrpl-status",""); }
+    else setText("#xrpl-status","No data.");
+  }catch{ setText("#xrpl-status","Unavailable."); }})();
+
+  // Platforms UI
+  const pills = Array.from(document.querySelectorAll(".pillbtn"));
+  const minScore = $("#minScore"); const minScoreVal=$("#minScoreVal");
+  const pSearch = $("#pSearch"); const platsEl = $("#plats");
+
+  let currentType = "All";
+  function setActive(type) {
+    currentType = type;
+    pills.forEach(b => b.classList.toggle("active", b.dataset.type === type));
+  }
+  pills.forEach(b => b.addEventListener("click", () => { setActive(b.dataset.type); loadPlatforms(); }));
+  minScore.addEventListener("input", ()=>{ minScoreVal.textContent = minScore.value; });
+  minScore.addEventListener("change", loadPlatforms);
+  pSearch.addEventListener("input", () => { clearTimeout(pSearch._t); pSearch._t = setTimeout(loadPlatforms, 300); });
+
+  async function loadPlatforms() {
+    setText("#plat-status","Loading...");
+    try {
+      const url = `/api/platforms?type=${encodeURIComponent(currentType)}&minScore=${encodeURIComponent(minScore.value)}&q=${encodeURIComponent(pSearch.value)}&sort=scoreDesc`;
+      const out = await GET(url);
+      const html = (out.platforms||[]).map(p=>`
+        <div class="plat-row">
+          <div><strong>${p.name}</strong> <span class="muted">· ${p.category||""}${p.regionFocus?(" · "+p.regionFocus):""}</span></div>
+          <div>${p.type}</div>
+          <div>${p.complianceScore!=null?p.complianceScore.toFixed(1):"—"}</div>
+          <div class="muted">${p.remarks||""}</div>
+        </div>`).join("");
+      platsEl.innerHTML = html || "<div class='muted'>No platforms match filters.</div>";
+      setText("#plat-status", `${out.count||0} platforms`);
+    } catch {
+      setText("#plat-status","Platforms unavailable.");
     }
-    const prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
-    applyTheme(saved ?? (prefersLight ? 'light' : 'dark'));
-    document.getElementById('themeToggle').onclick = () => {
-      const cur = root.classList.contains('light') ? 'light' : 'dark';
-      applyTheme(cur === 'light' ? 'dark' : 'light');
-    };
+  }
+  setActive("All"); minScoreVal.textContent = minScore.value; loadPlatforms();
 
-    // ---- helpers ----
-    const $$ = sel => document.querySelector(sel);
-    const fmtUsd = n => n == null ? '—' : '$' + n.toLocaleString(undefined, {maximumFractionDigits: 6});
-    const fmtPct = n => n == null ? '' : ` (${(n*100).toFixed(1)}% conf)`;
-    const fmtDate = ms => new Date(ms).toLocaleString();
+  // Regulatory (SEC + CFTC)
+  (async()=>{try{
+    const out=await GET("/api/news/regulatory");
+    const html=(out.items||[]).map(i=>`
+      <li class="news"><a href="${i.link}" target="_blank" rel="noopener">${i.title}</a>
+        <span class="muted"> · ${i.source||""} · ${i.published?new Date(i.published).toLocaleDateString():""}</span></li>`).join("");
+    $("#reg-news").innerHTML = html || "<li>No recent items.</li>";
+    setText("#reg-status","");
+  }catch{ setText("#reg-status","Regulatory feeds unavailable."); }})();
 
-    // ---- Prices ----
-    async function loadPrices(){
-      try{
-        const r = await fetch('/api/prices');
-        const json = await r.json();
-        const d = json.data || {};
-        const el = $$('#prices');
-        el.innerHTML = '';
-        for(const k of ['USDT','USDC','DAI','sDAI']){
-          const v = d[k] || {}; const conf = v.confidence != null ? `\n<div class="muted">conf ${(v.confidence*100).toFixed(0)}%</div>` : '';
-          const box = document.createElement('div');
-          box.className = 'box';
-          box.innerHTML = `<div class="muted">${k}</div><div class="price">${fmtUsd(v.price)}</div>${conf}`;
-          el.appendChild(box);
-        }
-        $$('#pricesUpdated').textContent = 'Updated ' + fmtDate(json.updatedAt);
-      }catch(e){ $$('#pricesCard').innerHTML += '<div class="muted">Price feed unavailable.</div>'; }
-    }
+  // Ripple / XRPL
+  (async()=>{try{
+    const out=await GET("/api/news/xrp");
+    const html=(out.items||[]).map(i=>`
+      <li class="news"><a href="${i.link}" target="_blank" rel="noopener">${i.title}</a>
+        <span class="muted"> · ${i.source||""} · ${i.published?new Date(i.published).toLocaleDateString():""}</span></li>`).join("");
+    $("#xrp-news").innerHTML = html || "<li>No recent items.</li>";
+    setText("#xrpnews-status","");
+  }catch{ setText("#xrpnews-status","Ripple/XRPL feeds unavailable."); }})();
 
-    // ---- sDAI Yields ----
-    async function loadYields(){
-      try{
-        const r = await fetch('/api/yields/sdai');
-        const { pools } = await r.json();
-        const list = $$('#yields');
-        list.innerHTML = '';
-        (pools||[]).forEach(p => {
-          const a = document.createElement('a');
-          a.href = p.url || '#';
-          a.target = '_blank';
-          a.rel = 'noopener';
-          a.innerHTML = `<strong>${p.project}</strong> · ${p.chain} · ${p.symbol}<br><span class="muted">APY: ${p.apy?.toFixed?.(2) ?? '—'}% · TVL: ${fmtUsd(p.tvlUsd)}</span>`;
-          list.appendChild(a);
-        });
-      }catch(e){ $$('#yields').innerHTML = '<div class="muted">Yield feed unavailable.</div>'; }
-    }
-
-    // ---- Stablecoin charts ----
-    async function loadSeries(chain, canvasId){
-      const r = await fetch('/api/stablecoins/chain?chain='+encodeURIComponent(chain));
-      const { series } = await r.json();
-      const ctx = document.getElementById(canvasId).getContext('2d');
-      const data = series.slice(-365); // last ~1y
-      return new Chart(ctx, {
-        type: 'line',
-        data: {
-          datasets: [{
-            label: 'Circulating USD',
-            data: data.map(p => ({ x: p.t, y: p.circulatingUSD })),
-            borderWidth: 2,
-            tension: .2,
-            fill: false
-          }]
-        },
-        options: {
-          responsive: true,
-          parsing: false,
-          scales: {
-            x: { type: 'time', time: { unit: 'month' } },
-            y: { ticks: { callback: (v) => '$' + Number(v).toLocaleString() } }
-          },
-          plugins: { legend: { display: false } }
-        }
-      });
-    }
-
-    // Chart.js time scale needs a date adapter — use built-in fallback by converting x to ms
-    (async function init(){
-      await loadPrices();
-      await loadYields();
-      await loadSeries('Ethereum', 'ethChart');
-      await loadSeries('Tron', 'tronChart');
-      // News last so it doesn’t block the first paint
-      try{
-        const r = await fetch('/api/news');
-        const { items } = await r.json();
-        const list = $$('#news');
-        items.forEach(n => {
-          const a = document.createElement('a');
-          a.href = n.link; a.target = '_blank'; a.rel = 'noopener';
-          const when = n.published ? new Date(n.published).toLocaleString() : '';
-          a.innerHTML = `<strong>${n.title}</strong><br><span class="muted">${n.source} • ${when}</span>`;
-          list.appendChild(a);
-        });
-      }catch(e){ $$('#news').innerHTML = '<div class="muted">News feeds unavailable.</div>'; }
-    })();
+  // Fed + BIS
+  (async()=>{try{
+    const out=await GET("/api/news");
+    const html=(out.items||[]).map(i=>`
+      <li class="news"><a href="${i.link}" target="_blank" rel="noopener">${i.title}</a>
+        <span class="muted"> · ${i.source||""} · ${i.published?new Date(i.published).toLocaleDateString():""}</span></li>`).join("");
+    $("#news").innerHTML = html || "<li>No recent items.</li>";
+    setText("#news-status","");
+  }catch{ setText("#news-status","News feed unavailable."); }})();
   </script>
 </body>
 </html>
+

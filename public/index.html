@@ -2,8 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>StableLens v1</title>
+  <title>StableLens v1.1</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Chart.js via CDN (no package install needed) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     :root {
       --bg: #0b0e11;
@@ -15,6 +17,8 @@
       --warn: #f39c12;
       --bad: #e74c3c;
       --border: #1c2430;
+      --brand1: #1f9cf0;
+      --brand2: #56d7aa;
     }
     .light {
       --bg: #f6f8fb;
@@ -26,46 +30,71 @@
       --warn: #d97706;
       --bad: #dc2626;
       --border: #e5e7eb;
+      --brand1: #2563eb;
+      --brand2: #10b981;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
-      background: var(--bg);
+      font-family: ui-sans-serif, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+      background: radial-gradient(1200px 600px at -10% -10%, rgba(31,156,240,.15), transparent 40%),
+                  radial-gradient(900px 500px at 110% 10%, rgba(86,215,170,.12), transparent 40%),
+                  var(--bg);
       color: var(--text);
     }
     header {
-      display:flex; align-items:center; justify-content:space-between;
+      display:flex; align-items:center; justify-content:space-between; gap:14px;
       padding: 16px 20px; border-bottom:1px solid var(--border);
       position: sticky; top: 0; backdrop-filter: blur(6px);
     }
-    .brand { display:flex; gap:10px; align-items:center; font-weight:700; letter-spacing:.2px; }
+    .brand { display:flex; gap:12px; align-items:center; font-weight:800; letter-spacing:.3px; }
+    .brand-badge {
+      width:28px; height:28px; border-radius:8px; display:grid; place-items:center;
+      background: linear-gradient(135deg, var(--brand1), var(--brand2)); color:white; font-weight:900;
+    }
     .tabs { display:flex; flex-wrap:wrap; gap:8px; }
     .tab { padding:8px 12px; border:1px solid var(--border); border-radius:10px; cursor:pointer; background:var(--card); color:var(--text); }
     .tab.active { outline: 2px solid var(--accent); }
     .theme { border:1px solid var(--border); padding:8px 12px; border-radius:10px; background:var(--card); cursor:pointer; }
-    main { max-width:1100px; margin: 24px auto; padding: 0 16px; display:grid; gap:16px; }
+    main { max-width:1200px; margin: 24px auto; padding: 0 16px; display:grid; gap:16px; }
     .grid { display:grid; gap:16px; grid-template-columns: repeat(2, 1fr); }
+    .grid-3 { display:grid; gap:16px; grid-template-columns: repeat(3, 1fr); }
     .card { background: var(--card); border:1px solid var(--border); border-radius:14px; padding:16px; }
-    .card h3 { margin:0 0 8px 0; font-size:16px; }
-    table { width:100%; border-collapse:collapse; font-size:14px; }
-    th, td { padding:8px; border-bottom:1px solid var(--border); text-align:left; }
+    .card h3 { margin:0 0 10px 0; font-size:16px; display:flex; align-items:center; gap:8px;}
     .muted { color: var(--muted); }
     .pill { padding:2px 8px; border-radius:999px; font-size:12px; border:1px solid var(--border); background:transparent;}
     .ok { color: var(--ok); }
     .warn { color: var(--warn); }
     .bad { color: var(--bad); }
     .hidden { display:none; }
-    .controls { display:flex; gap:12px; align-items:center; margin-bottom:10px; }
+    .controls { display:flex; gap:12px; align-items:center; flex-wrap: wrap; margin-bottom:10px; }
     input[type="range"] { width: 160px; }
+    table { width:100%; border-collapse:collapse; font-size:14px; }
+    th, td { padding:8px; border-bottom:1px solid var(--border); text-align:left; }
+    th.sort { cursor:pointer; }
     a { color: var(--accent); text-decoration:none; }
+    .avatar {
+      width:22px; height:22px; border-radius:6px;
+      background: linear-gradient(135deg, var(--brand1), var(--brand2));
+      color:#fff; display:grid; place-items:center; font-size:12px; font-weight:800;
+    }
+
+    /* Modal */
+    .modal-backdrop {
+      position:fixed; inset:0; background: rgba(0,0,0,.35); display:none;
+      align-items:center; justify-content:center; padding:20px; z-index:50;
+    }
+    .modal { max-width:900px; width:100%; background:var(--card); border:1px solid var(--border); border-radius:16px; overflow:hidden; }
+    .modal header { position:relative; border:none; }
+    .modal header .close { position:absolute; right:12px; top:12px; border:1px solid var(--border); border-radius:8px; background:var(--card); color:var(--text); padding:6px 10px; cursor:pointer;}
+    .modal body { display:block; padding:0 16px 16px; }
   </style>
 </head>
 <body class="dark">
   <header>
     <div class="brand">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor"/><path d="M7 12h10M12 7v10" stroke="currentColor"/></svg>
-      <div>StableLens <span class="muted">v1</span></div>
+      <div class="brand-badge">SL</div>
+      <div>StableLens <span class="muted">v1.1</span></div>
     </div>
     <div class="tabs">
       <button class="tab active" data-tab="overview">Overview</button>
@@ -89,12 +118,24 @@
         <h3>Last Updated</h3>
         <div id="statusLine" class="muted">—</div>
       </div>
+
       <div class="card">
-        <h3>Quick Peg Monitor</h3>
-        <div class="muted" id="pegNote">Prices not wired in v1 (safe mode). Depeg alerts will appear if available.</div>
+        <h3>Quick Finder (Best Compliant Yield)</h3>
+        <div class="controls">
+          <label class="muted">Min Compliance:
+            <input id="bfMin" type="range" min="1" max="10" step="0.5" value="7" />
+            <span id="bfMinVal" class="pill">7.0</span>
+          </label>
+          <label class="muted">Chain:
+            <input id="bfChain" placeholder="(optional e.g. Ethereum)" class="pill" style="padding:6px 10px; border:1px solid var(--border); background:transparent; color:var(--text);" />
+          </label>
+          <button id="bfRun" class="pill" style="cursor:pointer;">Find Best</button>
+        </div>
+        <div id="bfResult" class="muted">—</div>
       </div>
+
       <div class="card">
-        <h3>APY Summary (Top entries)</h3>
+        <h3>APY Snapshot (Top rows)</h3>
         <div id="apySummary" class="muted">Loading…</div>
       </div>
     </section>
@@ -107,11 +148,12 @@
             <input id="scoreFilter" type="range" min="1" max="10" step="0.5" value="6" />
             <span id="scoreVal" class="pill">6.0</span>
           </label>
+          <span class="muted">Click a row for detail</span>
         </div>
         <table id="stableTable">
           <thead>
             <tr>
-              <th>Symbol</th><th>Name</th><th>Issuer</th><th>Jurisdiction</th><th>Auditor</th><th>Model</th><th>Score</th>
+              <th></th><th>Symbol</th><th>Name</th><th>Issuer</th><th>Jurisdiction</th><th>Auditor</th><th>Model</th><th class="sort" data-sort="score">Score ▲</th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -129,11 +171,31 @@
               <option>USDC</option><option>USDT</option><option>DAI</option><option>sDAI</option><option>FRAX</option><option>PYUSD</option><option>GHO</option>
             </select>
           </label>
+          <label class="muted">Chain:
+            <input id="yieldChain" placeholder="(optional)" class="pill" style="padding:6px 10px; border:1px solid var(--border); background:transparent; color:var(--text);" />
+          </label>
+          <label class="muted">Min Compliance:
+            <input id="yieldMinScore" type="range" min="1" max="10" step="0.5" value="0" />
+            <span id="yieldMinVal" class="pill">0.0</span>
+          </label>
+          <label class="muted">Sort:
+            <select id="yieldSort">
+              <option value="apy">APY</option>
+              <option value="tvl">TVL</option>
+            </select>
+          </label>
+          <label class="muted">Order:
+            <select id="yieldOrder">
+              <option value="desc">Desc</option>
+              <option value="asc">Asc</option>
+            </select>
+          </label>
+          <button id="yieldRefresh" class="pill" style="cursor:pointer;">Refresh</button>
         </div>
         <table id="yieldTable">
           <thead>
             <tr>
-              <th>Project</th><th>Chain</th><th>Symbol</th><th>APY</th><th>TVL ($)</th><th>Pool</th>
+              <th>Project</th><th>Chain</th><th>Symbol</th><th class="sort" data-sort="apy">APY</th><th class="sort" data-sort="tvlUsd">TVL ($)</th><th>Pool</th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -145,22 +207,22 @@
     <section id="platforms" class="hidden">
       <div class="grid">
         <div class="card">
-          <h3>CeFi Platforms</h3>
+          <h3>CeFi Platforms <span class="muted">(click a row)</span></h3>
           <table id="cefiTable">
             <thead>
               <tr>
-                <th>Name</th><th>Jurisdiction</th><th>Licenses</th><th>PoR</th><th>Score</th>
+                <th></th><th>Name</th><th>Jurisdiction</th><th>Licenses</th><th>PoR</th><th class="sort" data-sort="score">Score</th>
               </tr>
             </thead>
             <tbody></tbody>
           </table>
         </div>
         <div class="card">
-          <h3>DeFi Platforms</h3>
+          <h3>DeFi Platforms <span class="muted">(click a row)</span></h3>
           <table id="defiTable">
             <thead>
               <tr>
-                <th>Name</th><th>Chain</th><th>Audits</th><th>Notes</th><th>Score</th>
+                <th></th><th>Name</th><th>Chain</th><th>Audits</th><th>Notes</th><th class="sort" data-sort="score">Score</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -186,6 +248,38 @@
     </section>
   </main>
 
+  <!-- Modal -->
+  <div id="modalBack" class="modal-backdrop">
+    <div class="modal">
+      <header>
+        <div class="brand">
+          <div class="brand-badge" id="modalAvatar">SL</div>
+          <div id="modalTitle">—</div>
+        </div>
+        <button class="close" id="modalClose">Close</button>
+      </header>
+      <body>
+        <div class="grid">
+          <div class="card">
+            <h3>Details</h3>
+            <div id="modalDetails" class="muted">—</div>
+          </div>
+          <div class="card">
+            <h3>Score Breakdown</h3>
+            <canvas id="scoreChart" height="180"></canvas>
+          </div>
+        </div>
+        <div class="card" id="modalPoolsCard">
+          <h3>Top Pools</h3>
+          <table id="modalPools">
+            <thead><tr><th>Project</th><th>Chain</th><th>APY</th><th>TVL</th><th>Link</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </body>
+    </div>
+  </div>
+
   <script>
     const $ = (sel, d=document) => d.querySelector(sel);
     const $$ = (sel, d=document) => d.querySelectorAll(sel);
@@ -195,8 +289,7 @@
     const themeBtn = $("#theme");
     let light = false;
     themeBtn.onclick = () => {
-      light = !light;
-      if (light) body.classList.add("light"); else body.classList.remove("light");
+      light = !light; light ? body.classList.add("light") : body.classList.remove("light");
     };
 
     // Tabs
@@ -209,6 +302,17 @@
         $("#" + t).classList.remove("hidden");
       };
     });
+
+    // State
+    let STABLES = [];
+    let YIELDS = [];
+    let CHART; // modal chart
+
+    // Helpers
+    const avatar = s => `<div class="avatar">${(s||"?").slice(0,2).toUpperCase()}</div>`;
+    const fmt = n => n==null ? "—" : (typeof n === "number" ? n.toLocaleString() : n);
+    const fmtPct = n => (n==null ? "—" : `${(+n).toFixed(2)}%`);
+    const set = (id, html) => { $(id).innerHTML = html; };
 
     // Health & status
     async function loadHealth() {
@@ -229,22 +333,23 @@
       } catch { $("#statusLine").textContent = "—"; }
     }
 
-    // Stablecoins
-    let STABLES = [];
+    // Stablecoins (list + detail)
     async function loadStablecoins() {
       const res = await fetch("/api/stablecoins").then(r=>r.json()).catch(()=>({stablecoins:[]}));
       STABLES = res.stablecoins || [];
       renderStableTable();
     }
-    function renderStableTable() {
+    function renderStableTable(sortKey="score", asc=false) {
       const minScore = parseFloat($("#scoreFilter").value);
       $("#scoreVal").textContent = minScore.toFixed(1);
-      const tbody = $("#stableTable tbody");
-      tbody.innerHTML = "";
-      STABLES.filter(s => (s.score || 0) >= minScore).forEach(s => {
+      const tbody = $("#stableTable tbody"); tbody.innerHTML = "";
+      const rows = STABLES.filter(s => (s.score || 0) >= minScore)
+        .sort((a,b) => asc ? (a[sortKey]-b[sortKey]) : (b[sortKey]-a[sortKey]));
+      rows.forEach(s=>{
         const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td><span class="pill">${s.symbol}</span></td>
+          <td>${avatar(s.symbol)}</td>
+          <td><b>${s.symbol}</b></td>
           <td>${s.name || ""}</td>
           <td>${s.issuer || ""}</td>
           <td class="muted">${s.jurisdiction || ""}</td>
@@ -252,65 +357,151 @@
           <td class="muted">${s.model || ""}</td>
           <td><b>${(s.score||0).toFixed(1)}</b></td>
         `;
+        tr.style.cursor = "pointer";
+        tr.onclick = ()=> openCoinModal(s.symbol);
         tbody.appendChild(tr);
       });
     }
     $("#scoreFilter").oninput = renderStableTable;
+    // sort click
+    $$("#stableTable th.sort").forEach(th=>{
+      let asc=false;
+      th.onclick = ()=>{ asc=!asc; renderStableTable(th.dataset.sort, asc); };
+    });
 
-    // Yields
+    async function openCoinModal(symbol) {
+      const res = await fetch(`/api/stablecoins/${encodeURIComponent(symbol)}`).then(r=>r.json()).catch(()=>null);
+      if (!res || !res.stablecoin) return;
+      const { stablecoin: s, breakdown, topPools } = res;
+
+      $("#modalAvatar").textContent = (s.symbol||"SL").slice(0,2).toUpperCase();
+      $("#modalTitle").innerHTML = `<b>${s.symbol}</b> — ${s.name||""}`;
+      set("#modalDetails", `
+        <div><b>Issuer:</b> ${s.issuer||"—"}</div>
+        <div><b>Jurisdiction:</b> ${s.jurisdiction||"—"}</div>
+        <div><b>Auditor:</b> ${s.auditor||"—"}</div>
+        <div><b>Model:</b> ${s.model||"—"}</div>
+        <div><b>Chains:</b> ${(s.chains||[]).join(", ")||"—"}</div>
+        <div><b>Score:</b> ${(breakdown?.total||s.score||0).toFixed(1)}</div>
+      `);
+
+      // Chart (score parts)
+      const ctx = $("#scoreChart").getContext("2d");
+      if (CHART) CHART.destroy();
+      const p = breakdown?.parts || {};
+      CHART = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels: ["Base","Jurisdiction","Auditor","Model","Offshore","Genius","Depeg"],
+          datasets: [{
+            label: "Contribution",
+            data: [p.base||0, p.jurisdiction||0, p.auditor||0, p.model||0, p.offshore||0, p.genius||0, p.depeg||0]
+          }]
+        },
+        options: { responsive:true, plugins:{ legend:{display:false} } }
+      });
+
+      // Pools table
+      const tbody = $("#modalPools tbody"); tbody.innerHTML="";
+      (topPools||[]).forEach(p=>{
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${p.project}</td>
+          <td class="muted">${p.chain}</td>
+          <td><b>${fmtPct(p.apy)}</b></td>
+          <td>${fmt(p.tvlUsd)}</td>
+          <td><a href="${p.pool}" target="_blank">view</a></td>
+        `;
+        tbody.appendChild(tr);
+      });
+      $("#modalPoolsCard").style.display = (topPools||[]).length ? "block" : "none";
+
+      $("#modalBack").style.display = "flex";
+    }
+
+    // Platforms
+    async function loadPlatforms() {
+      const res = await fetch("/api/platforms").then(r=>r.json()).catch(()=>({cefi:[],defi:[]}));
+      const ctbody = $("#cefiTable tbody"), dtbody = $("#defiTable tbody");
+      ctbody.innerHTML = ""; dtbody.innerHTML = "";
+      (res.cefi||[]).sort((a,b)=> (b.score||0)-(a.score||0)).forEach(p=>{
+        const tr=document.createElement("tr");
+        tr.innerHTML = `<td>${avatar(p.name)}</td><td><b>${p.name}</b></td><td class="muted">${p.jurisdiction||""}</td>
+                        <td class="muted">${(p.licenses||[]).join(", ")}</td><td class="muted">${p.por||""}</td>
+                        <td><b>${(p.score||0).toFixed(1)}</b></td>`;
+        tr.style.cursor="pointer"; tr.onclick=()=>openPlatformModal(p.name);
+        ctbody.appendChild(tr);
+      });
+      (res.defi||[]).sort((a,b)=> (b.score||0)-(a.score||0)).forEach(p=>{
+        const tr=document.createElement("tr");
+        tr.innerHTML = `<td>${avatar(p.name)}</td><td><b>${p.name}</b></td><td class="muted">${p.chain||""}</td>
+                        <td class="muted">${(p.audits||[]).join(", ")}</td><td class="muted">${p.riskNotes||""}</td>
+                        <td><b>${(p.score||0).toFixed(1)}</b></td>`;
+        tr.style.cursor="pointer"; tr.onclick=()=>openPlatformModal(p.name);
+        dtbody.appendChild(tr);
+      });
+    }
+
+    async function openPlatformModal(name) {
+      const res = await fetch(`/api/platforms/${encodeURIComponent(name)}`).then(r=>r.json()).catch(()=>null);
+      if (!res || !res.platform) return;
+      const p = res.platform;
+      $("#modalAvatar").textContent = (p.name||"PL").slice(0,2).toUpperCase();
+      $("#modalTitle").innerHTML = `<b>${p.name}</b>`;
+      set("#modalDetails", `
+        <div><b>Jurisdiction:</b> ${p.jurisdiction||"—"}</div>
+        <div><b>Licenses:</b> ${(p.licenses||[]).join(", ")||"—"}</div>
+        <div><b>Auditor:</b> ${p.auditor||"—"}</div>
+        <div><b>Proof-of-Reserves:</b> ${p.por||"—"}</div>
+        <div><b>Insured:</b> ${p.insured ? "Yes" : "No"}</div>
+        <div><b>Notes:</b> ${p.riskNotes||"—"}</div>
+        <div><b>Score:</b> ${(p.score||0).toFixed(1)}</div>
+      `);
+      $("#modalPoolsCard").style.display="none";
+      if (CHART) CHART.destroy();
+      $("#scoreChart").getContext("2d").clearRect(0,0,400,200);
+      $("#modalBack").style.display = "flex";
+    }
+
+    $("#modalClose").onclick = ()=> $("#modalBack").style.display = "none";
+    $("#modalBack").onclick = (e)=> { if (e.target.id === "modalBack") $("#modalBack").style.display = "none"; };
+
+    // Yields (filters + sorting)
     async function loadYields() {
-      const sym = $("#yieldSymbol").value;
-      const url = sym ? `/api/yields?symbol=${encodeURIComponent(sym)}` : "/api/yields";
-      const res = await fetch(url).then(r=>r.json()).catch(()=>({pools:[]}));
-      const rows = res.pools || [];
-      const tbody = $("#yieldTable tbody");
-      tbody.innerHTML = "";
-      rows.forEach(p => {
+      const qs = new URLSearchParams({
+        symbol: $("#yieldSymbol").value || "",
+        chain: $("#yieldChain").value || "",
+        minScore: $("#yieldMinScore").value || "0",
+        sort: $("#yieldSort").value || "apy",
+        order: $("#yieldOrder").value || "desc"
+      });
+      const res = await fetch(`/api/yields?${qs.toString()}`).then(r=>r.json()).catch(()=>({pools:[]}));
+      YIELDS = res.pools || [];
+      renderYields();
+      $("#apySummary").textContent = YIELDS.slice(0,5).map(x=>`${x.symbol}@${x.project}: ${x.apy?x.apy.toFixed(2)+"%":"—"}`).join("  •  ") || "No data";
+    }
+    function renderYields() {
+      const tbody = $("#yieldTable tbody"); tbody.innerHTML="";
+      YIELDS.forEach(p=>{
         const tr = document.createElement("tr");
         tr.innerHTML = `
           <td>${p.project}</td>
           <td class="muted">${p.chain}</td>
           <td>${p.symbol}</td>
-          <td><b>${p.apy !== null && p.apy !== undefined ? p.apy.toFixed(2) + "%": "—"}</b></td>
-          <td>${p.tvlUsd ? p.tvlUsd.toLocaleString() : "—"}</td>
+          <td><b>${fmtPct(p.apy)}</b></td>
+          <td>${fmt(p.tvlUsd)}</td>
           <td class="muted"><a href="${p.pool}" target="_blank">view</a></td>
         `;
         tbody.appendChild(tr);
       });
-      $("#apySummary").textContent = rows.slice(0,5).map(x=>`${x.symbol}@${x.project}: ${x.apy?x.apy.toFixed(2)+"%":"—"}`).join("  •  ") || "No data";
     }
+    $("#yieldRefresh").onclick = loadYields;
     $("#yieldSymbol").onchange = loadYields;
-
-    // Platforms
-    async function loadPlatforms() {
-      const res = await fetch("/api/platforms").then(r=>r.json()).catch(()=>({cefi:[],defi:[]}));
-      const ctbody = $("#cefiTable tbody");
-      const dtbody = $("#defiTable tbody");
-      ctbody.innerHTML = "";
-      dtbody.innerHTML = "";
-      (res.cefi||[]).forEach(p=>{
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${p.name}</td>
-          <td class="muted">${p.jurisdiction||""}</td>
-          <td class="muted">${(p.licenses||[]).join(", ")}</td>
-          <td class="muted">${p.por||""}</td>
-          <td><b>${(p.score||0).toFixed(1)}</b></td>
-        `;
-        ctbody.appendChild(tr);
-      });
-      (res.defi||[]).forEach(p=>{
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${p.name}</td>
-          <td class="muted">${p.chain||""}</td>
-          <td class="muted">${(p.audits||[]).join(", ")}</td>
-          <td class="muted">${p.riskNotes||""}</td>
-          <td><b>${(p.score||0).toFixed(1)}</b></td>
-        `;
-        dtbody.appendChild(tr);
-      });
-    }
+    $("#yieldChain").onchange = loadYields;
+    $("#yieldMinScore").oninput = ()=>{ $("#yieldMinVal").textContent = (+$("#yieldMinScore").value).toFixed(1); };
+    $("#yieldMinScore").onchange = loadYields;
+    $("#yieldSort").onchange = loadYields;
+    $("#yieldOrder").onchange = loadYields;
 
     // News
     async function loadNews() {
@@ -336,6 +527,21 @@
       });
     }
 
+    // Quick Finder (best)
+    $("#bfMin").oninput = ()=> $("#bfMinVal").textContent = (+$("#bfMin").value).toFixed(1);
+    $("#bfRun").onclick = async ()=>{
+      const qs = new URLSearchParams({
+        minScore: $("#bfMin").value,
+        chain: $("#bfChain").value || "",
+        top: "10"
+      });
+      const res = await fetch(`/api/best?${qs.toString()}`).then(r=>r.json()).catch(()=>({results:[]}));
+      const arr = res.results || [];
+      $("#bfResult").innerHTML = arr.length
+        ? arr.map(r=>`<div><b>${r.symbol}</b> @ ${r.project} on ${r.chain} — <b>${fmtPct(r.apy)}</b> (TVL $${fmt(r.tvlUsd)} • score ${(r.complianceScore||0).toFixed(1)}) — <a href="${r.pool}" target="_blank">pool</a></div>`).join("")
+        : "No matches for those constraints.";
+    };
+
     // Boot
     (async function init(){
       await loadHealth();
@@ -344,7 +550,7 @@
       await loadPlatforms();
       await loadNews();
       await loadAlerts();
-      // Refresh some data periodically
+
       setInterval(loadHealth, 60_000);
       setInterval(loadYields, 180_000);
       setInterval(loadNews, 300_000);

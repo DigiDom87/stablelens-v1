@@ -1,16 +1,19 @@
 {
-  "name": "stablelens-v1",
-  "version": "1.0.0",
+  "name": "stablelens-v2",
+  "version": "2.0.0",
   "private": true,
-  "description": "StableLens v1 - free API edition (no keys)",
   "type": "module",
   "engines": { "node": ">=18" },
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
     "express": "^4.19.2",
-    "rss-parser": "^3.12.0"
+    "pg": "^8.11.3",
+    "rss-parser": "^3.12.0",
+    "jsonwebtoken": "^9.0.2"
   }
 }

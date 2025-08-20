@@ -1,562 +1,478 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>StableLens v1.1</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- Chart.js via CDN (no package install needed) -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <meta name="color-scheme" content="dark light"/>
+  <title>StableLens</title>
+
+  <!-- Optional: Sentry (frontend) -->
+  <script src="https://browser.sentry-cdn.com/7.119.0/bundle.tracing.replay.min.js" crossorigin="anonymous"></script>
+  <script>
+    (function(){
+      const DSN = window.__SENTRY_DSN__ || ""; // set in a small <script> before this if you want
+      if (!DSN) return;
+      Sentry.init({
+        dsn: DSN,
+        integrations: [ Sentry.browserTracingIntegration(), Sentry.replayIntegration() ],
+        tracesSampleRate: 0.2, replaysSessionSampleRate: 0.05, replaysOnErrorSampleRate: 1.0
+      });
+    })();
+  </script>
+
+  <!-- Optional: PostHog -->
+  <script>
+  (function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){
+  function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.async=!0,p.src=s.api_host+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;void 0!==a?u=e[a]=[]:a="posthog";u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="capture identify alias people.set people.set_once people.unset people.union people.track_charge people.clear_charges people.delete_user".split(" ");
+  for(n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)})(document,window.posthog||[]);
+  (function(){ const KEY = window.__POSTHOG_KEY__ || ""; if(!KEY) return; posthog.init(KEY, { api_host: "https://app.posthog.com" }); })();
+  </script>
+
+  <!-- Optional: Clerk (publishable key set on this tag to enable) -->
+  <script async crossorigin="anonymous" data-clerk-publishable-key="" src="https://cdn.jsdelivr.net/npm/@clerk/clerk-js@5/dist/clerk.browser.js"></script>
+  <script>
+    window.addEventListener('load', async () => {
+      const pk = document.currentScript?.getAttribute('data-clerk-publishable-key') || "";
+      if (!window.Clerk || !pk) return;
+      await Clerk.load();
+      const nav = document.querySelector('.nav .flex');
+      const btn = document.createElement('button');
+      btn.className='tab-btn'; btn.textContent='Sign in'; btn.onclick = () => Clerk.openSignIn();
+      Clerk.session?.id ? (btn.textContent='Account', btn.onclick=()=>Clerk.openUserProfile()) : null;
+      nav.prepend(btn);
+      Clerk.addListener(({ session }) => { btn.textContent = session ? 'Account' : 'Sign in'; btn.onclick = session ? () => Clerk.openUserProfile() : () => Clerk.openSignIn(); });
+    });
+  </script>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" defer></script>
+
   <style>
     :root {
-      --bg: #0b0e11;
-      --card: #12161c;
-      --text: #e9edf1;
-      --muted: #9aa4ad;
-      --accent: #5dd8ff;
-      --ok: #27ae60;
-      --warn: #f39c12;
-      --bad: #e74c3c;
-      --border: #1c2430;
-      --brand1: #1f9cf0;
-      --brand2: #56d7aa;
+      --bg:#0b1220; --bg-soft:#121a2a; --card:#0f1626; --text:#e9eef6; --muted:#9fb0c6;
+      --accent:#2dd4bf; --accent-2:#60a5fa; --danger:#ef4444; --ok:#10b981; --border:#1f2a40; --shadow:0 10px 30px rgba(0,0,0,.35)
     }
-    .light {
-      --bg: #f6f8fb;
-      --card: #ffffff;
-      --text: #1f2937;
-      --muted: #6b7280;
-      --accent: #0ea5e9;
-      --ok: #059669;
-      --warn: #d97706;
-      --bad: #dc2626;
-      --border: #e5e7eb;
-      --brand1: #2563eb;
-      --brand2: #10b981;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: ui-sans-serif, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
-      background: radial-gradient(1200px 600px at -10% -10%, rgba(31,156,240,.15), transparent 40%),
-                  radial-gradient(900px 500px at 110% 10%, rgba(86,215,170,.12), transparent 40%),
-                  var(--bg);
-      color: var(--text);
-    }
-    header {
-      display:flex; align-items:center; justify-content:space-between; gap:14px;
-      padding: 16px 20px; border-bottom:1px solid var(--border);
-      position: sticky; top: 0; backdrop-filter: blur(6px);
-    }
-    .brand { display:flex; gap:12px; align-items:center; font-weight:800; letter-spacing:.3px; }
-    .brand-badge {
-      width:28px; height:28px; border-radius:8px; display:grid; place-items:center;
-      background: linear-gradient(135deg, var(--brand1), var(--brand2)); color:white; font-weight:900;
-    }
-    .tabs { display:flex; flex-wrap:wrap; gap:8px; }
-    .tab { padding:8px 12px; border:1px solid var(--border); border-radius:10px; cursor:pointer; background:var(--card); color:var(--text); }
-    .tab.active { outline: 2px solid var(--accent); }
-    .theme { border:1px solid var(--border); padding:8px 12px; border-radius:10px; background:var(--card); cursor:pointer; }
-    main { max-width:1200px; margin: 24px auto; padding: 0 16px; display:grid; gap:16px; }
-    .grid { display:grid; gap:16px; grid-template-columns: repeat(2, 1fr); }
-    .grid-3 { display:grid; gap:16px; grid-template-columns: repeat(3, 1fr); }
-    .card { background: var(--card); border:1px solid var(--border); border-radius:14px; padding:16px; }
-    .card h3 { margin:0 0 10px 0; font-size:16px; display:flex; align-items:center; gap:8px;}
-    .muted { color: var(--muted); }
-    .pill { padding:2px 8px; border-radius:999px; font-size:12px; border:1px solid var(--border); background:transparent;}
-    .ok { color: var(--ok); }
-    .warn { color: var(--warn); }
-    .bad { color: var(--bad); }
-    .hidden { display:none; }
-    .controls { display:flex; gap:12px; align-items:center; flex-wrap: wrap; margin-bottom:10px; }
-    input[type="range"] { width: 160px; }
-    table { width:100%; border-collapse:collapse; font-size:14px; }
-    th, td { padding:8px; border-bottom:1px solid var(--border); text-align:left; }
-    th.sort { cursor:pointer; }
-    a { color: var(--accent); text-decoration:none; }
-    .avatar {
-      width:22px; height:22px; border-radius:6px;
-      background: linear-gradient(135deg, var(--brand1), var(--brand2));
-      color:#fff; display:grid; place-items:center; font-size:12px; font-weight:800;
-    }
-
-    /* Modal */
-    .modal-backdrop {
-      position:fixed; inset:0; background: rgba(0,0,0,.35); display:none;
-      align-items:center; justify-content:center; padding:20px; z-index:50;
-    }
-    .modal { max-width:900px; width:100%; background:var(--card); border:1px solid var(--border); border-radius:16px; overflow:hidden; }
-    .modal header { position:relative; border:none; }
-    .modal header .close { position:absolute; right:12px; top:12px; border:1px solid var(--border); border-radius:8px; background:var(--card); color:var(--text); padding:6px 10px; cursor:pointer;}
-    .modal body { display:block; padding:0 16px 16px; }
+    .light{ --bg:#f7f9fc; --bg-soft:#f0f4f9; --card:#fff; --text:#0e1726; --muted:#4b5563; --border:#e5ecf6; --shadow:0 8px 24px rgba(0,0,0,.08) }
+    *{box-sizing:border-box} html,body{height:100%} body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Inter,Helvetica,Arial;color:var(--text);background:linear-gradient(180deg,var(--bg),var(--bg-soft))}
+    a{color:var(--accent-2);text-decoration:none} a:hover{text-decoration:underline}
+    .wrap{max-width:1200px;margin:0 auto;padding:24px}
+    .nav{position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background: color-mix(in oklab, var(--bg) 86%, transparent);border-bottom:1px solid var(--border)}
+    .nav-inner{display:flex;gap:16px;align-items:center;justify-content:space-between;padding:12px 24px}
+    .brand{display:flex;gap:10px;align-items:center;font-weight:700}
+    .brand .logo{width:28px;height:28px;border-radius:50%;background:radial-gradient(circle at 30% 30%,#7dd3fc,#06b6d4 60%,#0369a1)}
+    .tabs{display:flex;gap:6px;flex-wrap:wrap}
+    .tab-btn{padding:8px 12px;border:1px solid var(--border);border-radius:10px;background:var(--card);color:var(--text);box-shadow:var(--shadow);cursor:pointer;font-weight:600;letter-spacing:.2px}
+    .tab-btn[aria-selected="true"]{outline:2px solid var(--accent);outline-offset:1px}
+    .pill{font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid var(--border);background:var(--bg-soft);color:var(--muted)}
+    .grid{display:grid;gap:16px} .g-2{grid-template-columns:repeat(2,minmax(0,1fr))} .g-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+    @media (max-width:1100px){.g-3{grid-template-columns:repeat(2,1fr)}} @media (max-width:760px){.g-2,.g-3{grid-template-columns:1fr}}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;box-shadow:var(--shadow)} .card h3{margin:.1rem 0 10px 0;font-size:16px} .card .sub{color:var(--muted);font-size:12px}
+    .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0 8px} .toolbar input,.toolbar select{background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:8px 10px}
+    table{width:100%;border-collapse:collapse} th,td{padding:10px;border-bottom:1px solid var(--border);text-align:left} th{color:var(--muted);font-weight:600}
+    tr:hover td{background:color-mix(in oklab, var(--card) 92%, var(--bg) 8%)} .badge{padding:4px 8px;border-radius:999px;border:1px solid var(--border);background:var(--bg);font-size:12px}
+    .score{font-weight:800} .score.good{color:var(--ok)} .score.mid{color:#eab308} .score.bad{color:var(--danger)}
+    .btn{background:var(--accent-2);border:0;color:white;padding:8px 12px;border-radius:10px;cursor:pointer;font-weight:700} .btn.secondary{background:var(--bg);color:var(--text);border:1px solid var(--border)}
+    .right{margin-left:auto} .muted{color:var(--muted)} .flex{display:flex;gap:10px;align-items:center}
+    .modal{position:fixed;inset:0;display:none;place-items:center;background:rgba(0,0,0,.55)} .modal.show{display:grid}
+    .modal .panel{width:min(900px,94%);max-height:90vh;overflow:auto;background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:16px}
+    .footer{padding:40px 24px;color:var(--muted);text-align:center}
+    .chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);background:var(--bg);border-radius:999px;padding:6px 10px}
   </style>
 </head>
-<body class="dark">
-  <header>
-    <div class="brand">
-      <div class="brand-badge">SL</div>
-      <div>StableLens <span class="muted">v1.1</span></div>
-    </div>
-    <div class="tabs">
-      <button class="tab active" data-tab="overview">Overview</button>
-      <button class="tab" data-tab="stablecoins">Stablecoins</button>
-      <button class="tab" data-tab="yields">Yields</button>
-      <button class="tab" data-tab="platforms">Platforms</button>
-      <button class="tab" data-tab="news">News</button>
-      <button class="tab" data-tab="alerts">Alerts</button>
-      <button id="theme" class="theme">Theme</button>
+<body>
+  <header class="nav">
+    <div class="nav-inner">
+      <div class="brand"><div class="logo"></div><div>StableLens <span class="pill">v1.4</span></div></div>
+      <div class="tabs" role="tablist" aria-label="Sections">
+        <button class="tab-btn" data-tab="overview" aria-selected="true">Overview</button>
+        <button class="tab-btn" data-tab="stablecoins">Stablecoins</button>
+        <button class="tab-btn" data-tab="platforms">Platforms</button>
+        <button class="tab-btn" data-tab="yields">Yields</button>
+        <button class="tab-btn" data-tab="macro">Macro</button>
+        <button class="tab-btn" data-tab="payments">Payments</button>
+        <button class="tab-btn" data-tab="news">News & Alerts</button>
+      </div>
+      <div class="flex">
+        <span id="statusDot" class="chip"><span style="width:8px;height:8px;background:var(--ok);border-radius:999px;display:inline-block"></span> live</span>
+        <button id="themeBtn" class="tab-btn" title="Theme">Theme</button>
+      </div>
     </div>
   </header>
 
-  <main>
-    <!-- Overview -->
-    <section id="overview" class="grid">
-      <div class="card">
-        <h3>Health</h3>
-        <div id="healthLine" class="muted">—</div>
-      </div>
-      <div class="card">
-        <h3>Last Updated</h3>
-        <div id="statusLine" class="muted">—</div>
-      </div>
-
-      <div class="card">
-        <h3>Quick Finder (Best Compliant Yield)</h3>
-        <div class="controls">
-          <label class="muted">Min Compliance:
-            <input id="bfMin" type="range" min="1" max="10" step="0.5" value="7" />
-            <span id="bfMinVal" class="pill">7.0</span>
-          </label>
-          <label class="muted">Chain:
-            <input id="bfChain" placeholder="(optional e.g. Ethereum)" class="pill" style="padding:6px 10px; border:1px solid var(--border); background:transparent; color:var(--text);" />
-          </label>
-          <button id="bfRun" class="pill" style="cursor:pointer;">Find Best</button>
+  <main class="wrap">
+    <!-- OVERVIEW -->
+    <section id="tab-overview" class="grid g-3">
+      <div class="card" style="grid-column:1/-1">
+        <div class="flex" style="justify-content:space-between;align-items:flex-end">
+          <div><h2 style="margin:0 0 4px 0">At-a-Glance</h2><div class="sub">Compliance distribution, chain coverage, leaders, and best compliant yields.</div></div>
+          <div class="flex"><button class="btn secondary" id="refreshBtn">Refresh</button></div>
         </div>
-        <div id="bfResult" class="muted">—</div>
       </div>
-
+      <div class="card"><h3>Compliance Distribution</h3><div class="sub">Stablecoins by score buckets.</div><canvas id="distChart" height="170"></canvas></div>
+      <div class="card"><h3>Chain Coverage</h3><div class="sub">Where tracked stables live.</div><canvas id="chainChart" height="170"></canvas></div>
       <div class="card">
-        <h3>APY Snapshot (Top rows)</h3>
-        <div id="apySummary" class="muted">Loading…</div>
+        <h3>Top Compliant Stablecoins</h3>
+        <table id="topStable"><thead><tr><th>Symbol</th><th>Name</th><th>Score</th><th>Issuer</th></tr></thead><tbody></tbody></table>
+      </div>
+      <div class="card" style="grid-column:1/-1">
+        <h3>Best Compliant Yields <span class="sub">(score ≥ 7)</span></h3>
+        <div class="toolbar"><button class="btn" id="openYieldsFinder">Open Finder</button><span class="muted">Showing top 5 right now</span></div>
+        <div id="bestNow" class="grid g-3"></div>
       </div>
     </section>
 
-    <!-- Stablecoins -->
-    <section id="stablecoins" class="hidden">
+    <!-- STABLECOINS -->
+    <section id="tab-stablecoins" class="grid" style="display:none">
       <div class="card">
-        <div class="controls">
-          <label class="muted">Min score:
-            <input id="scoreFilter" type="range" min="1" max="10" step="0.5" value="6" />
-            <span id="scoreVal" class="pill">6.0</span>
-          </label>
-          <span class="muted">Click a row for detail</span>
+        <div class="toolbar">
+          <input id="scSearch" placeholder="Search stablecoins..."/>
+          <select id="scMinScore"><option value="0">Min score: 0</option><option value="6">Min score: 6</option><option value="7">Min score: 7</option><option value="8">Min score: 8</option></select>
         </div>
-        <table id="stableTable">
-          <thead>
-            <tr>
-              <th></th><th>Symbol</th><th>Name</th><th>Issuer</th><th>Jurisdiction</th><th>Auditor</th><th>Model</th><th class="sort" data-sort="score">Score ▲</th>
-            </tr>
-          </thead>
+        <table id="stableTable"><thead><tr><th>Symbol</th><th>Name</th><th>Score</th><th>Issuer</th><th>Jurisdiction</th><th>Auditor</th><th>Model</th><th>Chains</th></tr></thead><tbody></tbody></table>
+      </div>
+    </section>
+
+    <!-- PLATFORMS -->
+    <section id="tab-platforms" class="grid" style="display:none">
+      <div class="card">
+        <div class="toolbar">
+          <select id="pfType"><option value="cefi">CeFi</option><option value="defi">DeFi</option></select>
+          <input id="pfSearch" placeholder="Search platforms..."/>
+          <select id="pfSort"><option value="score-desc">Score ↓</option><option value="score-asc">Score ↑</option><option value="name-asc">Name A–Z</option></select>
+        </div>
+        <table id="platformTable"><thead><tr><th>Name</th><th>Score</th><th>Jurisdiction</th><th>Licenses</th><th>Auditor</th><th>PoR</th><th>Risk</th></tr></thead><tbody></tbody></table>
+      </div>
+    </section>
+
+    <!-- YIELDS -->
+    <section id="tab-yields" class="grid" style="display:none">
+      <div class="card">
+        <div class="toolbar">
+          <select id="ySymbol"><option value="">Any Symbol</option></select>
+          <input id="yChain" placeholder="Chain (optional)"/>
+          <select id="ySort"><option value="apy-desc">APY ↓</option><option value="apy-asc">APY ↑</option><option value="tvl-desc">TVL ↓</option><option value="tvl-asc">TVL ↑</option></select>
+          <select id="yMin"><option value="0">Min score: 0</option><option value="6">Min score: 6</option><option value="7" selected>Min score: 7</option><option value="8">Min score: 8</option></select>
+          <button class="btn" id="yApply">Apply</button><span class="right pill" id="yCount">0 pools</span>
+        </div>
+        <table id="yieldTable"><thead><tr><th>Project</th><th>Chain</th><th>Symbol</th><th>APY</th><th>TVL (USD)</th><th>Pool</th></tr></thead><tbody></tbody></table>
+      </div>
+    </section>
+
+    <!-- MACRO -->
+    <section id="tab-macro" class="grid g-3" style="display:none">
+      <div class="card" style="grid-column:1/-1"><h2 style="margin:.1rem 0">Macro Dashboard</h2><div class="sub">M2, stablecoin dominance, SOFR, and Treasury curve.</div></div>
+      <div class="card"><h3>M2 Money Stock</h3><div class="sub" id="m2Meta">—</div><canvas id="m2Chart" height="180"></canvas></div>
+      <div class="card"><h3>Stablecoin Dominance</h3><div style="font-size:28px;font-weight:800" id="domPct">—</div><div class="sub" id="domMeta">—</div></div>
+      <div class="card"><h3>Treasury Curve</h3><div class="sub" id="ustMeta">—</div><table><tbody id="ustTable"></tbody></table></div>
+      <div class="card"><h3>SOFR (last 30 days)</h3><div class="sub" id="sofrMeta">—</div><canvas id="sofrChart" height="180"></canvas></div>
+    </section>
+
+    <!-- PAYMENTS -->
+    <section id="tab-payments" class="grid" style="display:none">
+      <div class="card">
+        <div class="flex" style="justify-content:space-between;align-items:flex-end">
+          <div><h2 style="margin:.1rem 0">Payments Corridors</h2><div class="sub">Prefunding delta, time saved, and ramp coverage.</div></div>
+          <button class="btn secondary" id="payRefresh">Refresh</button>
+        </div>
+        <table id="payTable">
+          <thead><tr><th>Corridor</th><th>Legacy (days)</th><th>Prefund (days)</th><th>On-chain (hrs)</th><th>Time Saved (days)</th><th>Ramps</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
     </section>
 
-    <!-- Yields -->
-    <section id="yields" class="hidden">
-      <div class="card">
-        <div class="controls">
-          <label class="muted">Symbol:
-            <select id="yieldSymbol">
-              <option value="">All</option>
-              <option>USDC</option><option>USDT</option><option>DAI</option><option>sDAI</option><option>FRAX</option><option>PYUSD</option><option>GHO</option>
-            </select>
-          </label>
-          <label class="muted">Chain:
-            <input id="yieldChain" placeholder="(optional)" class="pill" style="padding:6px 10px; border:1px solid var(--border); background:transparent; color:var(--text);" />
-          </label>
-          <label class="muted">Min Compliance:
-            <input id="yieldMinScore" type="range" min="1" max="10" step="0.5" value="0" />
-            <span id="yieldMinVal" class="pill">0.0</span>
-          </label>
-          <label class="muted">Sort:
-            <select id="yieldSort">
-              <option value="apy">APY</option>
-              <option value="tvl">TVL</option>
-            </select>
-          </label>
-          <label class="muted">Order:
-            <select id="yieldOrder">
-              <option value="desc">Desc</option>
-              <option value="asc">Asc</option>
-            </select>
-          </label>
-          <button id="yieldRefresh" class="pill" style="cursor:pointer;">Refresh</button>
-        </div>
-        <table id="yieldTable">
-          <thead>
-            <tr>
-              <th>Project</th><th>Chain</th><th>Symbol</th><th class="sort" data-sort="apy">APY</th><th class="sort" data-sort="tvlUsd">TVL ($)</th><th>Pool</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- Platforms -->
-    <section id="platforms" class="hidden">
-      <div class="grid">
-        <div class="card">
-          <h3>CeFi Platforms <span class="muted">(click a row)</span></h3>
-          <table id="cefiTable">
-            <thead>
-              <tr>
-                <th></th><th>Name</th><th>Jurisdiction</th><th>Licenses</th><th>PoR</th><th class="sort" data-sort="score">Score</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-        <div class="card">
-          <h3>DeFi Platforms <span class="muted">(click a row)</span></h3>
-          <table id="defiTable">
-            <thead>
-              <tr>
-                <th></th><th>Name</th><th>Chain</th><th>Audits</th><th>Notes</th><th class="sort" data-sort="score">Score</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <!-- News -->
-    <section id="news" class="hidden">
-      <div class="card">
-        <h3>Regulatory & Auditing News</h3>
-        <ul id="newsList"></ul>
-      </div>
-    </section>
-
-    <!-- Alerts -->
-    <section id="alerts" class="hidden">
-      <div class="card">
-        <h3>Active Alerts</h3>
-        <ul id="alertsList"></ul>
-      </div>
+    <!-- NEWS -->
+    <section id="tab-news" class="grid g-2" style="display:none">
+      <div class="card"><h3>Regulatory & Auditor Feeds</h3><div id="newsList"></div></div>
+      <div class="card"><h3>Alerts</h3><div id="alertList"></div></div>
     </section>
   </main>
 
-  <!-- Modal -->
-  <div id="modalBack" class="modal-backdrop">
-    <div class="modal">
-      <header>
-        <div class="brand">
-          <div class="brand-badge" id="modalAvatar">SL</div>
-          <div id="modalTitle">—</div>
-        </div>
-        <button class="close" id="modalClose">Close</button>
-      </header>
-      <body>
-        <div class="grid">
-          <div class="card">
-            <h3>Details</h3>
-            <div id="modalDetails" class="muted">—</div>
-          </div>
-          <div class="card">
-            <h3>Score Breakdown</h3>
-            <canvas id="scoreChart" height="180"></canvas>
-          </div>
-        </div>
-        <div class="card" id="modalPoolsCard">
+  <!-- Stablecoin Modal -->
+  <div id="coinModal" class="modal" role="dialog" aria-modal="true">
+    <div class="panel">
+      <div class="flex" style="justify-content:space-between">
+        <div><h2 id="coinTitle" style="margin:.1rem 0"></h2><div id="coinSub" class="sub"></div></div>
+        <button class="tab-btn" id="coinClose">Close</button>
+      </div>
+      <div class="grid g-2" style="margin-top:12px">
+        <div class="card"><h3>Score Breakdown</h3><canvas id="coinBreakChart" height="160"></canvas></div>
+        <div class="card">
           <h3>Top Pools</h3>
-          <table id="modalPools">
-            <thead><tr><th>Project</th><th>Chain</th><th>APY</th><th>TVL</th><th>Link</th></tr></thead>
-            <tbody></tbody>
-          </table>
+          <table id="coinPools"><thead><tr><th>Project</th><th>Chain</th><th>APY</th><th>TVL</th></tr></thead><tbody></tbody></table>
+          <div style="margin-top:8px"><button class="btn" id="viewCoinYields">View in Yields</button></div>
         </div>
-      </body>
+      </div>
+      <div class="card">
+        <h3>Issuer Carry (estimator)</h3>
+        <div class="toolbar">
+          <input id="carrySupply" type="number" placeholder="Supply USD (e.g., 5000000000)"/>
+          <input id="carryPct" type="number" step="0.05" value="0.8" placeholder="Investable % (0.8)"/>
+          <button class="btn" id="carryRun">Estimate</button>
+          <span class="pill right" id="carryMeta">—</span>
+        </div>
+      </div>
+      <div class="card"><h3>Details</h3><div id="coinDetails" class="muted"></div></div>
     </div>
   </div>
 
+  <!-- Corridor Modal -->
+  <div id="corrModal" class="modal" role="dialog" aria-modal="true">
+    <div class="panel">
+      <div class="flex" style="justify-content:space-between">
+        <div><h2 id="corrTitle" style="margin:.1rem 0"></h2><div id="corrSub" class="sub"></div></div>
+        <button class="tab-btn" id="corrClose">Close</button>
+      </div>
+      <div class="grid g-2" style="margin-top:12px">
+        <div class="card">
+          <h3>Scenario (Working Capital)</h3>
+          <div class="toolbar">
+            <input id="scVol" type="number" placeholder="Avg daily volume USD (default from corridor)"/>
+            <input id="scWacc" type="number" step="0.01" placeholder="WACC (e.g., 0.10)"/>
+            <button class="btn" id="scRun">Run</button>
+            <span class="pill right" id="scMeta">—</span>
+          </div>
+          <table>
+            <tbody id="scTable"></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h3>Ramps</h3>
+          <div id="corrRamps"></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Notes</h3>
+        <div id="corrNotes" class="muted"></div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="footer">StableLens • Free APIs in v1 • Data: DefiLlama (yields), SEC/CFTC/Fed/BIS RSS, FRED, CoinGecko, NY Fed • Seed compliance & corridors</footer>
+
   <script>
-    const $ = (sel, d=document) => d.querySelector(sel);
-    const $$ = (sel, d=document) => d.querySelectorAll(sel);
+    // ---------- theme ----------
+    (function(){ const saved = localStorage.getItem('sl-theme'); if(saved==='light') document.body.classList.add('light');
+      document.getElementById('themeBtn').onclick = ()=>{ document.body.classList.toggle('light'); localStorage.setItem('sl-theme', document.body.classList.contains('light')?'light':'dark'); }; })();
 
-    // Theme
-    const body = document.body;
-    const themeBtn = $("#theme");
-    let light = false;
-    themeBtn.onclick = () => {
-      light = !light; light ? body.classList.add("light") : body.classList.remove("light");
-    };
+    // ---------- state ----------
+    const state = { stablecoins: [], platforms:{cefi:[],defi:[]}, yields: [], charts:{dist:null,chains:null,coinBreak:null,m2:null,sofr:null}, lastCoin:null, lastCorr:null };
 
-    // Tabs
-    $$(".tab").forEach(btn => {
-      btn.onclick = () => {
-        $$(".tab").forEach(b => b.classList.remove("active"));
-        btn.classList.add("active");
-        const t = btn.dataset.tab;
-        $$("main > section").forEach(s => s.classList.add("hidden"));
-        $("#" + t).classList.remove("hidden");
+    const $ = s => document.querySelector(s), $$ = s => Array.from(document.querySelectorAll(s));
+    const fmtPct = v => (v==null?'-': (v>=100? v.toFixed(0) : v.toFixed(2)) + '%');
+    const fmtUsd = v => v==null?'-': new Intl.NumberFormat('en-US',{style:'currency',currency:'USD', maximumFractionDigits:0}).format(v);
+    const scoreClass = s => s>=8?'good':(s>=6.8?'mid':'bad');
+    const GET = (u) => fetch(u).then(r=>r.json()).catch(_=>null);
+
+    // ---------- tabs ----------
+    $$('.tab-btn[data-tab]').forEach(btn=>{
+      btn.addEventListener('click',()=>{
+        const tab = btn.dataset.tab;
+        $$('.tab-btn[data-tab]').forEach(b=>b.setAttribute('aria-selected', String(b===btn)));
+        ['overview','stablecoins','platforms','yields','macro','payments','news'].forEach(id=>$('#tab-'+id).style.display = (id===tab)?'grid':'none');
+        if (tab==='overview') loadOverview(true);
+        if (tab==='stablecoins') loadStablecoins();
+        if (tab==='platforms') loadPlatforms();
+        if (tab==='yields') { populateSymbolFilter(); loadYields(); }
+        if (tab==='macro') loadMacro();
+        if (tab==='payments') loadPayments();
+        if (tab==='news') loadNewsAlerts();
+        history.replaceState(null,'','#'+tab);
+      });
+    });
+    window.addEventListener('hashchange', routeFromHash);
+    function routeFromHash(){
+      const h = location.hash.slice(1); if(!h) return;
+      if (['overview','stablecoins','platforms','yields','macro','payments','news'].includes(h)){ document.querySelector(`.tab-btn[data-tab="${h}"]`).click(); return; }
+      const [type,id] = h.split('/');
+      if (type==='coin' && id) openCoinModal(id.toUpperCase());
+      if (type==='platform' && id) openPlatformModal(decodeURIComponent(id));
+      if (type==='corridor' && id) openCorridorModal(decodeURIComponent(id));
+    }
+
+    // ---------- overview ----------
+    document.getElementById('refreshBtn').onclick = ()=> loadOverview(true);
+    document.getElementById('openYieldsFinder').onclick = ()=> document.querySelector('.tab-btn[data-tab="yields"]').click();
+    async function loadOverview(){
+      const metrics = await GET('/api/metrics'); if(!metrics) return;
+      // dist
+      const distLabels = Object.keys(metrics.dist||{}), distData = distLabels.map(k=>metrics.dist[k]);
+      if (state.charts.dist) state.charts.dist.destroy();
+      state.charts.dist = new Chart($('#distChart'), { type:'bar', data:{ labels:distLabels, datasets:[{ data:distData }] }, options:{plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}}}});
+      // chains
+      const entries = Object.entries(metrics.chains||{}).sort((a,b)=>b[1]-a[1]).slice(0,8);
+      if (state.charts.chains) state.charts.chains.destroy();
+      state.charts.chains = new Chart($('#chainChart'), { type:'bar', data:{ labels: entries.map(x=>x[0]), datasets:[{ data: entries.map(x=>x[1]) }] }, options:{plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}}}});
+      // leaders
+      const tbody = $('#topStable tbody'); tbody.innerHTML='';
+      (metrics.topStable||[]).forEach(s=>{
+        const tr=document.createElement('tr');
+        tr.innerHTML = `<td><a href="#coin/${s.symbol}" data-coin="${s.symbol}">${s.symbol}</a></td><td>${s.name||''}</td><td class="score ${scoreClass(s.score)}">${s.score?.toFixed(1)}</td><td>${s.issuer||''}</td>`;
+        tbody.appendChild(tr);
+      });
+      // best now
+      $('#bestNow').innerHTML = '';
+      const best = await GET('/api/best?minScore=7&top=5');
+      (best?.results||[]).forEach(p=>{
+        const card=document.createElement('div'); card.className='card';
+        card.innerHTML=`<div class="flex" style="justify-content:space-between"><div class="flex"><div class="badge">${p.chain}</div><div class="badge">${p.project}</div></div><div class="score ${scoreClass(p.complianceScore)}">${p.complianceScore?.toFixed(1)}</div></div><div style="margin:10px 0;font-size:20px;font-weight:800">${fmtPct(p.apy)}</div><div class="muted">${p.symbol} • TVL ${fmtUsd(p.tvlUsd)}</div><div style="margin-top:8px"><a href="${p.pool}" target="_blank" rel="noopener">Pool ↗</a></div>`;
+        $('#bestNow').appendChild(card);
+      });
+    }
+
+    // ---------- stablecoins ----------
+    async function loadStablecoins(){
+      const res = await GET('/api/stablecoins'); state.stablecoins = res?.stablecoins||[];
+      const q = $('#scSearch').value.trim().toLowerCase(), minScore = parseFloat($('#scMinScore').value||'0');
+      const tbody = $('#stableTable tbody'); tbody.innerHTML='';
+      state.stablecoins.filter(s => (!q || [s.symbol,s.name,s.issuer,s.jurisdiction,s.auditor].join(' ').toLowerCase().includes(q))).filter(s => (s.score||0) >= minScore).sort((a,b)=> (b.score||0)-(a.score||0)).forEach(s=>{
+        const tr=document.createElement('tr');
+        tr.innerHTML = `<td><a href="#coin/${s.symbol}" data-coin="${s.symbol}">${s.symbol}</a></td><td>${s.name||''}</td><td class="score ${scoreClass(s.score)}">${s.score?.toFixed(1)}</td><td>${s.issuer||''}</td><td>${s.jurisdiction||''}</td><td>${s.auditor||''}</td><td>${s.model||''}</td><td>${(s.chains||[]).slice(0,5).join(', ')}</td>`;
+        tbody.appendChild(tr);
+      });
+    }
+    $('#scSearch').oninput = loadStablecoins; $('#scMinScore').onchange = loadStablecoins;
+
+    // ---------- platforms ----------
+    async function loadPlatforms(){
+      const res = await GET('/api/platforms'); state.platforms = res || { cefi:[],defi:[] };
+      const type = $('#pfType').value, q = $('#pfSearch').value.trim().toLowerCase(), sort = $('#pfSort').value;
+      const tbody = $('#platformTable tbody'); tbody.innerHTML='';
+      let rows = (state.platforms[type]||[]).map(x=>x);
+      if(q) rows = rows.filter(p => [p.name,p.jurisdiction,(p.licenses||[]).join(' '),p.auditor,p.riskNotes].join(' ').toLowerCase().includes(q));
+      if(sort==='score-desc') rows.sort((a,b)=>(b.score||0)-(a.score||0));
+      if(sort==='score-asc') rows.sort((a,b)=>(a.score||0)-(b.score||0));
+      if(sort==='name-asc') rows.sort((a,b)=> (a.name||'').localeCompare(b.name||''));
+      rows.forEach(p=>{
+        const tr=document.createElement('tr');
+        tr.innerHTML = `<td><a href="#platform/${encodeURIComponent(p.name)}" data-platform="${p.name}">${p.name}</a></td><td class="score ${scoreClass(p.score)}">${p.score?.toFixed(1)}</td><td>${p.jurisdiction||''}</td><td>${(p.licenses||[]).slice(0,3).join(', ')}</td><td>${p.auditor||''}</td><td>${p.por||''}</td><td>${p.riskNotes||''}</td>`;
+        tbody.appendChild(tr);
+      });
+    }
+    $('#pfType').onchange = loadPlatforms; $('#pfSearch').oninput = loadPlatforms; $('#pfSort').onchange = loadPlatforms;
+
+    // ---------- yields ----------
+    function populateSymbolFilter(){ const sel=$('#ySymbol'); sel.innerHTML='<option value="">Any Symbol</option>'; state.stablecoins.forEach(s=>{ const opt=document.createElement('option'); opt.value=s.symbol; opt.textContent=s.symbol; sel.appendChild(opt); }); }
+    async function loadYields(){
+      const symbol=$('#ySymbol').value, chain=$('#yChain').value.trim(), [k,ord]=$('#ySort').value.split('-'), minScore=$('#yMin').value||'0';
+      const qs=new URLSearchParams({ sort:k, order:ord, minScore }); if(symbol) qs.set('symbol',symbol); if(chain) qs.set('chain',chain);
+      const res=await GET('/api/yields?'+qs.toString()); state.yields=res?.pools||[];
+      const tbody=$('#yieldTable tbody'); tbody.innerHTML='';
+      state.yields.forEach(p=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${p.project||''}</td><td>${p.chain||''}</td><td><a href="#coin/${(p.symbol||'').toUpperCase()}">${(p.symbol||'').toUpperCase()}</a></td><td>${fmtPct(p.apy)}</td><td>${fmtUsd(p.tvlUsd)}</td><td><a href="${p.pool}" target="_blank" rel="noopener">Open ↗</a></td>`; tbody.appendChild(tr); });
+      $('#yCount').textContent = `${state.yields.length} pools`;
+    }
+    $('#yApply').onclick = loadYields;
+
+    // ---------- macro ----------
+    async function loadMacro(){
+      await Promise.all([loadM2(), loadDominance(), loadUST(), loadSOFR()]);
+    }
+    function lineChart(ctx, xs, ys, label){ return new Chart(ctx,{ type:'line', data:{ labels:xs, datasets:[{ label, data:ys, tension:.15, pointRadius:0 }] }, options:{ plugins:{legend:{display:false}}, scales:{x:{display:false}, y:{beginAtZero:false}} } }); }
+    async function loadM2(){ try{ const r=await GET('/api/macro/m2'); const xs=(r.series||[]).map(p=>p.t), ys=(r.series||[]).map(p=>p.v); if(state.charts.m2) state.charts.m2.destroy(); state.charts.m2=lineChart($('#m2Chart'),xs,ys,'M2'); $('#m2Meta').textContent = `YoY: ${r.yoy!=null? r.yoy.toFixed(2)+'%':'—'} • Points: ${ys.length}`; }catch{ $('#m2Meta').textContent='Unavailable'; } }
+    async function loadDominance(){ try{ const r=await GET('/api/macro/stablecoin-dominance'); const pct=r.dominance!=null? r.dominance.toFixed(2)+'%':'—'; $('#domPct').textContent=pct; $('#domMeta').textContent=`Stable mcap: ${fmtUsd(r.stableCap||0)} • Total: ${fmtUsd(r.totalMcap||0)}`; }catch{ $('#domMeta').textContent='Unavailable'; } }
+    async function loadUST(){ try{ const r=await GET('/api/macro/treasury'); const rows=[['2Y',r.curve?.['2Y']],['10Y',r.curve?.['10Y']],['2s10s',r.curve?.['2s10s']]].map(([k,v])=>`<tr><td>${k}</td><td><b>${v!=null? v.toFixed(2)+'%':'—'}</b></td></tr>`).join(''); $('#ustTable').innerHTML=rows; $('#ustMeta').textContent=`Updated: ${new Date(r.updatedAt).toLocaleTimeString()}`; }catch{ $('#ustMeta').textContent='Unavailable'; } }
+    async function loadSOFR(){ try{ const r=await GET('/api/macro/sofr'); const xs=(r.series||[]).map(p=>p.t), ys=(r.series||[]).map(p=>p.v); if(state.charts.sofr) state.charts.sofr.destroy(); state.charts.sofr=lineChart($('#sofrChart'),xs,ys,'SOFR'); $('#sofrMeta').textContent=`Latest: ${r.latest!=null? r.latest.toFixed(2)+'%':'—'}`; }catch{ $('#sofrMeta').textContent='Unavailable'; } }
+
+    // ---------- payments (corridors) ----------
+    document.getElementById('payRefresh').onclick = loadPayments;
+    async function loadPayments(){
+      const r = await GET('/api/payments/corridors'); const rows = r?.corridors||[];
+      const tb = $('#payTable tbody'); tb.innerHTML='';
+      rows.forEach(c=>{
+        const tr=document.createElement('tr');
+        tr.innerHTML = `<td>${c.from}→${c.to} <span class="muted">(${c.id})</span></td><td>${c.legacySettleDays}</td><td>${c.prefundDays}</td><td>${c.onchainHours}</td><td><b>${c.timeSavedDays.toFixed(2)}</b></td><td>${c.rampCount}</td><td><a href="#corridor/${c.id}" data-corr="${c.id}">Open</a></td>`;
+        tb.appendChild(tr);
+      });
+    }
+
+    // ---------- news & alerts ----------
+    async function loadNewsAlerts(){
+      const news=await GET('/api/news'); const alerts=await GET('/api/alerts');
+      const nl=$('#newsList'); nl.innerHTML=''; (news?.items||[]).forEach(n=>{ const d=document.createElement('div'); d.className='card'; d.innerHTML=`<div class="sub">${n.source||''} • ${new Date(n.isoDate||n.date||Date.now()).toLocaleString()}</div><div style="margin-top:6px"><a href="${n.link}" target="_blank" rel="noopener">${n.title||''}</a></div>`; nl.appendChild(d); });
+      const al=$('#alertList'); al.innerHTML=''; (alerts?.alerts||[]).forEach(x=>{ const chip=x.severity==='high'?'var(--danger)':(x.severity==='medium'?'#eab308':'var(--ok)'); const d=document.createElement('div'); d.className='card'; d.innerHTML=`<div class="flex"><span class="badge" style="border-color:${chip};color:${chip}">${x.type}</span><div>${x.message||''}</div></div>${x.link?`<div style="margin-top:8px"><a href="${x.link}" target="_blank" rel="noopener">Source ↗</a></div>`:''}`; al.appendChild(d); });
+    }
+
+    // ---------- coin modal ----------
+    async function openCoinModal(symbol){
+      if (!state.stablecoins.length) await loadStablecoins();
+      const sc = state.stablecoins.find(s => s.symbol.toUpperCase()===symbol.toUpperCase()); if(!sc) return alert('Stablecoin not found');
+      const det = await GET('/api/stablecoins/'+encodeURIComponent(symbol));
+      state.lastCoin = symbol.toUpperCase();
+      $('#coinTitle').textContent = `${sc.symbol} — ${sc.name||''}`;
+      $('#coinSub').textContent = `${sc.issuer||''} • Score ${sc.score?.toFixed(1)} • ${sc.jurisdiction||''}`;
+      $('#coinDetails').innerHTML = `<div class="grid g-2"><div><div class="muted">Auditor</div><div>${sc.auditor||'-'}</div></div><div><div class="muted">Model</div><div>${sc.model||'-'}</div></div><div><div class="muted">Chains</div><div>${(sc.chains||[]).join(', ')}</div></div><div><div class="muted">Genius</div><div>${sc.genius||'-'}</div></div></div>`;
+      const parts = det?.breakdown?.parts || {}; if(state.charts.coinBreak) state.charts.coinBreak.destroy(); state.charts.coinBreak=new Chart($('#coinBreakChart'),{ type:'bar', data:{ labels:Object.keys(parts), datasets:[{ data:Object.values(parts) }] }, options:{ plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true }}}});
+      const tbody=$('#coinPools tbody'); tbody.innerHTML=''; (det?.topPools||[]).forEach(p=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${p.project}</td><td>${p.chain}</td><td>${fmtPct(p.apy||p.apyBase||0)}</td><td>${fmtUsd(p.tvlUsd)}</td>`; tbody.appendChild(tr); });
+      $('#viewCoinYields').onclick = ()=>{ document.querySelector('.tab-btn[data-tab="yields"]').click(); $('#ySymbol').value = sc.symbol; loadYields(); };
+      $('#carryRun').onclick = async ()=>{
+        const supply = Number($('#carrySupply').value||0), pct= Number($('#carryPct').value||0.8);
+        const r = await GET(`/api/issuer-carry/${encodeURIComponent(state.lastCoin)}?supplyUsd=${supply}&investablePct=${pct}`);
+        $('#carryMeta').textContent = r?.estRatePct!=null ? `Rate≈${r.estRatePct.toFixed(2)}% • Income≈${fmtUsd(r.estIncomeUsd||0)}` : 'Unavailable';
       };
-    });
+      $('#coinModal').classList.add('show'); history.replaceState(null,'','#coin/'+encodeURIComponent(symbol));
+    }
+    $('#coinClose').onclick = ()=> $('#coinModal').classList.remove('show');
 
-    // State
-    let STABLES = [];
-    let YIELDS = [];
-    let CHART; // modal chart
+    // ---------- corridor modal ----------
+    async function openCorridorModal(id){
+      const r = await GET('/api/payments/corridors/'+encodeURIComponent(id)); if(!r?.corridor) return alert('Corridor not found');
+      state.lastCorr = r.corridor.id;
+      $('#corrTitle').textContent = `${r.corridor.from}→${r.corridor.to} (${r.corridor.id})`;
+      $('#corrSub').textContent = `Legacy ${r.corridor.legacySettleDays}d • Prefund ${r.corridor.prefundDays}d • On-chain ${r.corridor.onchainHours}h • Time saved ${r.base.timeSavedDays.toFixed(2)}d`;
+      $('#corrNotes').textContent = r.corridor.notes || '-';
+      const rampsBox = $('#corrRamps'); rampsBox.innerHTML=''; (r.corridor.ramps||[]).forEach(x=>{ const div=document.createElement('div'); div.className='chip'; div.textContent = `${x.country}: ${x.provider} (${x.rails.join('/')})`; rampsBox.appendChild(div); });
+      // scenario defaults
+      $('#scVol').value = r.corridor.avgDailyVolUsd || '';
+      $('#scWacc').value = r.corridor.wacc || '';
+      const paintScenario = (d)=>{ $('#scTable').innerHTML = `<tr><td>Freed float</td><td><b>${fmtUsd(d.freedFloatUsd)}</b></td></tr><tr><td>Annual cost savings</td><td><b>${fmtUsd(d.annualCostSavingsUsd)}</b></td></tr>`; $('#scMeta').textContent = `Run @ ${fmtUsd(Number($('#scVol').value||r.corridor.avgDailyVolUsd||0))} & WACC ${Number($('#scWacc').value||r.corridor.wacc||0).toFixed(2)}`; };
+      paintScenario(r.scenario);
+      $('#scRun').onclick = async ()=>{ const v = Number($('#scVol').value||r.corridor.avgDailyVolUsd), w = Number($('#scWacc').value||r.corridor.wacc); const rr = await GET(`/api/payments/corridors/${encodeURIComponent(state.lastCorr)}?volumeUsd=${v}&wacc=${w}`); if(rr?.scenario) paintScenario(rr.scenario); };
+      $('#corrModal').classList.add('show'); history.replaceState(null,'','#corridor/'+encodeURIComponent(id));
+    }
+    $('#corrClose').onclick = ()=> $('#corrModal').classList.remove('show');
 
-    // Helpers
-    const avatar = s => `<div class="avatar">${(s||"?").slice(0,2).toUpperCase()}</div>`;
-    const fmt = n => n==null ? "—" : (typeof n === "number" ? n.toLocaleString() : n);
-    const fmtPct = n => (n==null ? "—" : `${(+n).toFixed(2)}%`);
-    const set = (id, html) => { $(id).innerHTML = html; };
-
-    // Health & status
-    async function loadHealth() {
-      try {
-        const h = await fetch("/api/health").then(r=>r.json());
-        $("#healthLine").textContent = `OK • ${new Date(h.ts).toLocaleString()}`;
-      } catch { $("#healthLine").textContent = "unreachable"; }
-      try {
-        const s = await fetch("/api/status").then(r=>r.json());
-        const u = s.updatedAt || {};
-        $("#statusLine").innerHTML = `
-          Stablecoins: ${u.stablecoins ? new Date(u.stablecoins).toLocaleTimeString() : "—"} |
-          Yields: ${u.yields ? new Date(u.yields).toLocaleTimeString() : "—"} |
-          Platforms: ${u.platforms ? new Date(u.platforms).toLocaleTimeString() : "—"} |
-          News: ${u.news ? new Date(u.news).toLocaleTimeString() : "—"} |
-          Alerts: ${u.alerts ? new Date(u.alerts).toLocaleTimeString() : "—"}
-        `;
-      } catch { $("#statusLine").textContent = "—"; }
+    // ---------- news/alerts ----------
+    async function loadNewsAlerts(){
+      const news=await GET('/api/news'); const alerts=await GET('/api/alerts');
+      const nl=$('#newsList'); nl.innerHTML=''; (news?.items||[]).forEach(n=>{ const d=document.createElement('div'); d.className='card'; d.innerHTML=`<div class="sub">${n.source||''} • ${new Date(n.isoDate||n.date||Date.now()).toLocaleString()}</div><div style="margin-top:6px"><a href="${n.link}" target="_blank" rel="noopener">${n.title||''}</a></div>`; nl.appendChild(d); });
+      const al=$('#alertList'); al.innerHTML=''; (alerts?.alerts||[]).forEach(x=>{ const chip=x.severity==='high'?'var(--danger)':(x.severity==='medium'?'#eab308':'var(--ok)'); const d=document.createElement('div'); d.className='card'; d.innerHTML=`<div class="flex"><span class="badge" style="border-color:${chip};color:${chip}">${x.type}</span><div>${x.message||''}</div></div>${x.link?`<div style="margin-top:8px"><a href="${x.link}" target="_blank" rel="noopener">Source ↗</a></div>`:''}`; al.appendChild(d); });
     }
 
-    // Stablecoins (list + detail)
-    async function loadStablecoins() {
-      const res = await fetch("/api/stablecoins").then(r=>r.json()).catch(()=>({stablecoins:[]}));
-      STABLES = res.stablecoins || [];
-      renderStableTable();
-    }
-    function renderStableTable(sortKey="score", asc=false) {
-      const minScore = parseFloat($("#scoreFilter").value);
-      $("#scoreVal").textContent = minScore.toFixed(1);
-      const tbody = $("#stableTable tbody"); tbody.innerHTML = "";
-      const rows = STABLES.filter(s => (s.score || 0) >= minScore)
-        .sort((a,b) => asc ? (a[sortKey]-b[sortKey]) : (b[sortKey]-a[sortKey]));
-      rows.forEach(s=>{
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${avatar(s.symbol)}</td>
-          <td><b>${s.symbol}</b></td>
-          <td>${s.name || ""}</td>
-          <td>${s.issuer || ""}</td>
-          <td class="muted">${s.jurisdiction || ""}</td>
-          <td class="muted">${s.auditor || ""}</td>
-          <td class="muted">${s.model || ""}</td>
-          <td><b>${(s.score||0).toFixed(1)}</b></td>
-        `;
-        tr.style.cursor = "pointer";
-        tr.onclick = ()=> openCoinModal(s.symbol);
-        tbody.appendChild(tr);
-      });
-    }
-    $("#scoreFilter").oninput = renderStableTable;
-    // sort click
-    $$("#stableTable th.sort").forEach(th=>{
-      let asc=false;
-      th.onclick = ()=>{ asc=!asc; renderStableTable(th.dataset.sort, asc); };
-    });
+    // ---------- macro helpers ----------
+    function lineChart(ctx, xs, ys, label){ return new Chart(ctx,{ type:'line', data:{ labels:xs, datasets:[{ label, data:ys, tension:.15, pointRadius:0 }] }, options:{ plugins:{legend:{display:false}}, scales:{ x:{display:false}, y:{beginAtZero:false} } } }); }
+    async function loadM2(){ try{ const r=await GET('/api/macro/m2'); const xs=(r.series||[]).map(p=>p.t), ys=(r.series||[]).map(p=>p.v); if(state.charts.m2) state.charts.m2.destroy(); state.charts.m2=lineChart($('#m2Chart'),xs,ys,'M2'); $('#m2Meta').textContent = `YoY: ${r.yoy!=null? r.yoy.toFixed(2)+'%':'—'} • Points: ${ys.length}`; }catch{ $('#m2Meta').textContent='Unavailable'; } }
+    async function loadDominance(){ try{ const r=await GET('/api/macro/stablecoin-dominance'); $('#domPct').textContent = r.dominance!=null? r.dominance.toFixed(2)+'%':'—'; $('#domMeta').textContent = `Stable mcap: ${fmtUsd(r.stableCap||0)} • Total: ${fmtUsd(r.totalMcap||0)}`; }catch{ $('#domMeta').textContent='Unavailable'; } }
+    async function loadUST(){ try{ const r=await GET('/api/macro/treasury'); const rows=[['2Y',r.curve?.['2Y']],['10Y',r.curve?.['10Y']],['2s10s',r.curve?.['2s10s']]].map(([k,v])=>`<tr><td>${k}</td><td><b>${v!=null? v.toFixed(2)+'%':'—'}</b></td></tr>`).join(''); $('#ustTable').innerHTML=rows; $('#ustMeta').textContent=`Updated: ${new Date(r.updatedAt).toLocaleTimeString()}`; }catch{ $('#ustMeta').textContent='Unavailable'; } }
+    async function loadSOFR(){ try{ const r=await GET('/api/macro/sofr'); const xs=(r.series||[]).map(p=>p.t), ys=(r.series||[]).map(p=>p.v); if(state.charts.sofr) state.charts.sofr.destroy(); state.charts.sofr=lineChart($('#sofrChart'),xs,ys,'SOFR'); $('#sofrMeta').textContent = `Latest: ${r.latest!=null? r.latest.toFixed(2)+'%':'—'}`; }catch{ $('#sofrMeta').textContent='Unavailable'; } }
+    async function loadMacro(){ await Promise.all([loadM2(), loadDominance(), loadUST(), loadSOFR()]); }
 
-    async function openCoinModal(symbol) {
-      const res = await fetch(`/api/stablecoins/${encodeURIComponent(symbol)}`).then(r=>r.json()).catch(()=>null);
-      if (!res || !res.stablecoin) return;
-      const { stablecoin: s, breakdown, topPools } = res;
-
-      $("#modalAvatar").textContent = (s.symbol||"SL").slice(0,2).toUpperCase();
-      $("#modalTitle").innerHTML = `<b>${s.symbol}</b> — ${s.name||""}`;
-      set("#modalDetails", `
-        <div><b>Issuer:</b> ${s.issuer||"—"}</div>
-        <div><b>Jurisdiction:</b> ${s.jurisdiction||"—"}</div>
-        <div><b>Auditor:</b> ${s.auditor||"—"}</div>
-        <div><b>Model:</b> ${s.model||"—"}</div>
-        <div><b>Chains:</b> ${(s.chains||[]).join(", ")||"—"}</div>
-        <div><b>Score:</b> ${(breakdown?.total||s.score||0).toFixed(1)}</div>
-      `);
-
-      // Chart (score parts)
-      const ctx = $("#scoreChart").getContext("2d");
-      if (CHART) CHART.destroy();
-      const p = breakdown?.parts || {};
-      CHART = new Chart(ctx, {
-        type: "bar",
-        data: {
-          labels: ["Base","Jurisdiction","Auditor","Model","Offshore","Genius","Depeg"],
-          datasets: [{
-            label: "Contribution",
-            data: [p.base||0, p.jurisdiction||0, p.auditor||0, p.model||0, p.offshore||0, p.genius||0, p.depeg||0]
-          }]
-        },
-        options: { responsive:true, plugins:{ legend:{display:false} } }
-      });
-
-      // Pools table
-      const tbody = $("#modalPools tbody"); tbody.innerHTML="";
-      (topPools||[]).forEach(p=>{
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${p.project}</td>
-          <td class="muted">${p.chain}</td>
-          <td><b>${fmtPct(p.apy)}</b></td>
-          <td>${fmt(p.tvlUsd)}</td>
-          <td><a href="${p.pool}" target="_blank">view</a></td>
-        `;
-        tbody.appendChild(tr);
-      });
-      $("#modalPoolsCard").style.display = (topPools||[]).length ? "block" : "none";
-
-      $("#modalBack").style.display = "flex";
-    }
-
-    // Platforms
-    async function loadPlatforms() {
-      const res = await fetch("/api/platforms").then(r=>r.json()).catch(()=>({cefi:[],defi:[]}));
-      const ctbody = $("#cefiTable tbody"), dtbody = $("#defiTable tbody");
-      ctbody.innerHTML = ""; dtbody.innerHTML = "";
-      (res.cefi||[]).sort((a,b)=> (b.score||0)-(a.score||0)).forEach(p=>{
-        const tr=document.createElement("tr");
-        tr.innerHTML = `<td>${avatar(p.name)}</td><td><b>${p.name}</b></td><td class="muted">${p.jurisdiction||""}</td>
-                        <td class="muted">${(p.licenses||[]).join(", ")}</td><td class="muted">${p.por||""}</td>
-                        <td><b>${(p.score||0).toFixed(1)}</b></td>`;
-        tr.style.cursor="pointer"; tr.onclick=()=>openPlatformModal(p.name);
-        ctbody.appendChild(tr);
-      });
-      (res.defi||[]).sort((a,b)=> (b.score||0)-(a.score||0)).forEach(p=>{
-        const tr=document.createElement("tr");
-        tr.innerHTML = `<td>${avatar(p.name)}</td><td><b>${p.name}</b></td><td class="muted">${p.chain||""}</td>
-                        <td class="muted">${(p.audits||[]).join(", ")}</td><td class="muted">${p.riskNotes||""}</td>
-                        <td><b>${(p.score||0).toFixed(1)}</b></td>`;
-        tr.style.cursor="pointer"; tr.onclick=()=>openPlatformModal(p.name);
-        dtbody.appendChild(tr);
-      });
-    }
-
-    async function openPlatformModal(name) {
-      const res = await fetch(`/api/platforms/${encodeURIComponent(name)}`).then(r=>r.json()).catch(()=>null);
-      if (!res || !res.platform) return;
-      const p = res.platform;
-      $("#modalAvatar").textContent = (p.name||"PL").slice(0,2).toUpperCase();
-      $("#modalTitle").innerHTML = `<b>${p.name}</b>`;
-      set("#modalDetails", `
-        <div><b>Jurisdiction:</b> ${p.jurisdiction||"—"}</div>
-        <div><b>Licenses:</b> ${(p.licenses||[]).join(", ")||"—"}</div>
-        <div><b>Auditor:</b> ${p.auditor||"—"}</div>
-        <div><b>Proof-of-Reserves:</b> ${p.por||"—"}</div>
-        <div><b>Insured:</b> ${p.insured ? "Yes" : "No"}</div>
-        <div><b>Notes:</b> ${p.riskNotes||"—"}</div>
-        <div><b>Score:</b> ${(p.score||0).toFixed(1)}</div>
-      `);
-      $("#modalPoolsCard").style.display="none";
-      if (CHART) CHART.destroy();
-      $("#scoreChart").getContext("2d").clearRect(0,0,400,200);
-      $("#modalBack").style.display = "flex";
-    }
-
-    $("#modalClose").onclick = ()=> $("#modalBack").style.display = "none";
-    $("#modalBack").onclick = (e)=> { if (e.target.id === "modalBack") $("#modalBack").style.display = "none"; };
-
-    // Yields (filters + sorting)
-    async function loadYields() {
-      const qs = new URLSearchParams({
-        symbol: $("#yieldSymbol").value || "",
-        chain: $("#yieldChain").value || "",
-        minScore: $("#yieldMinScore").value || "0",
-        sort: $("#yieldSort").value || "apy",
-        order: $("#yieldOrder").value || "desc"
-      });
-      const res = await fetch(`/api/yields?${qs.toString()}`).then(r=>r.json()).catch(()=>({pools:[]}));
-      YIELDS = res.pools || [];
-      renderYields();
-      $("#apySummary").textContent = YIELDS.slice(0,5).map(x=>`${x.symbol}@${x.project}: ${x.apy?x.apy.toFixed(2)+"%":"—"}`).join("  •  ") || "No data";
-    }
-    function renderYields() {
-      const tbody = $("#yieldTable tbody"); tbody.innerHTML="";
-      YIELDS.forEach(p=>{
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${p.project}</td>
-          <td class="muted">${p.chain}</td>
-          <td>${p.symbol}</td>
-          <td><b>${fmtPct(p.apy)}</b></td>
-          <td>${fmt(p.tvlUsd)}</td>
-          <td class="muted"><a href="${p.pool}" target="_blank">view</a></td>
-        `;
-        tbody.appendChild(tr);
-      });
-    }
-    $("#yieldRefresh").onclick = loadYields;
-    $("#yieldSymbol").onchange = loadYields;
-    $("#yieldChain").onchange = loadYields;
-    $("#yieldMinScore").oninput = ()=>{ $("#yieldMinVal").textContent = (+$("#yieldMinScore").value).toFixed(1); };
-    $("#yieldMinScore").onchange = loadYields;
-    $("#yieldSort").onchange = loadYields;
-    $("#yieldOrder").onchange = loadYields;
-
-    // News
-    async function loadNews() {
-      const res = await fetch("/api/news").then(r=>r.json()).catch(()=>({items:[]}));
-      const ul = $("#newsList"); ul.innerHTML="";
-      (res.items||[]).forEach(it=>{
-        const li = document.createElement("li");
-        const d = it.date ? new Date(it.date).toLocaleDateString() : "";
-        li.innerHTML = `<span class="pill">${it.source}</span> — <a href="${it.link}" target="_blank">${it.title}</a> <span class="muted">${d}</span>`;
-        ul.appendChild(li);
-      });
-    }
-
-    // Alerts
-    async function loadAlerts() {
-      const res = await fetch("/api/alerts").then(r=>r.json()).catch(()=>({alerts:[]}));
-      const ul = $("#alertsList"); ul.innerHTML="";
-      (res.alerts||[]).forEach(a=>{
-        const li = document.createElement("li");
-        const sev = a.severity==="high"?"bad":(a.severity==="medium"?"warn":"ok");
-        li.innerHTML = `<span class="pill ${sev}">${a.type}</span> ${a.message || ""} ${a.link?`<a href="${a.link}" target="_blank">details</a>`:""}`;
-        ul.appendChild(li);
-      });
-    }
-
-    // Quick Finder (best)
-    $("#bfMin").oninput = ()=> $("#bfMinVal").textContent = (+$("#bfMin").value).toFixed(1);
-    $("#bfRun").onclick = async ()=>{
-      const qs = new URLSearchParams({
-        minScore: $("#bfMin").value,
-        chain: $("#bfChain").value || "",
-        top: "10"
-      });
-      const res = await fetch(`/api/best?${qs.toString()}`).then(r=>r.json()).catch(()=>({results:[]}));
-      const arr = res.results || [];
-      $("#bfResult").innerHTML = arr.length
-        ? arr.map(r=>`<div><b>${r.symbol}</b> @ ${r.project} on ${r.chain} — <b>${fmtPct(r.apy)}</b> (TVL $${fmt(r.tvlUsd)} • score ${(r.complianceScore||0).toFixed(1)}) — <a href="${r.pool}" target="_blank">pool</a></div>`).join("")
-        : "No matches for those constraints.";
-    };
-
-    // Boot
-    (async function init(){
-      await loadHealth();
-      await loadStablecoins();
-      await loadYields();
-      await loadPlatforms();
-      await loadNews();
-      await loadAlerts();
-
-      setInterval(loadHealth, 60_000);
-      setInterval(loadYields, 180_000);
-      setInterval(loadNews, 300_000);
-      setInterval(loadAlerts, 120_000);
+    // ---------- boot ----------
+    (async function boot(){
+      const h = await GET('/api/health'); if(!h || h.status!=='ok'){ $('#statusDot').innerHTML='<span style="width:8px;height:8px;background:var(--danger);border-radius:999px;display:inline-block"></span> down'; }
+      document.querySelector('.tab-btn[data-tab="overview"]').setAttribute('aria-selected','true');
+      await loadOverview();
+      routeFromHash(); // deep links
     })();
+
+    // delegated links
+    document.addEventListener('click', (e)=>{
+      const a = e.target.closest('a[data-coin]'); if(a){ e.preventDefault(); openCoinModal(a.dataset.coin); }
+      const p = e.target.closest('a[data-platform]'); if(p){ e.preventDefault(); openPlatformModal(p.dataset.platform); }
+      const c = e.target.closest('a[data-corr]'); if(c){ e.preventDefault(); openCorridorModal(c.dataset.corr); }
+    });
+
+    // platform modal (same as before; fetched via /api/platforms/:name)
+    async function openPlatformModal(name){
+      const det = await GET('/api/platforms/'+encodeURIComponent(name)); if(!det?.platform) return alert('Platform not found');
+      const p = det.platform, bd = det.breakdown?.parts||{};
+      const modal = document.createElement('div'); // quick, inline modal builder to avoid extra markup
+      modal.className='modal show'; modal.innerHTML = `<div class="panel"><div class="flex" style="justify-content:space-between"><div><h2 style="margin:.1rem 0">${p.name}</h2><div class="sub">Score ${p.score?.toFixed(1)} • ${p.jurisdiction||''}</div></div><button class="tab-btn" id="pfX">Close</button></div><div class="grid g-2" style="margin-top:12px"><div class="card"><h3>Score Breakdown</h3><canvas id="pfBreakChart" height="160"></canvas></div><div class="card"><h3>Summary</h3><div class="muted"><div class="grid g-2"><div><div class="muted">Licenses</div><div>${(p.licenses||[]).join(', ')||'-'}</div></div><div><div class="muted">Auditor</div><div>${p.auditor||'-'}</div></div><div><div class="muted">PoR</div><div>${p.por||'-'}</div></div><div><div class="muted">Risk</div><div>${p.riskNotes||'-'}</div></div></div></div></div></div></div>`;
+      document.body.appendChild(modal);
+      const ctx=modal.querySelector('#pfBreakChart').getContext('2d'); new Chart(ctx,{ type:'bar', data:{ labels:Object.keys(bd), datasets:[{ data:Object.values(bd) }] }, options:{ plugins:{legend:{display:false}}, scales:{ y:{beginAtZero:true} } }});
+      modal.querySelector('#pfX').onclick = ()=>{ modal.remove(); };
+    }
   </script>
 </body>
 </html>
+
 
